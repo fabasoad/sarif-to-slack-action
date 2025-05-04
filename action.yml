@@ -1,0 +1,21 @@
+---
+name: "SARIF to Slack notification"
+author: "Yevhen Fabizhevskyi"
+description: "GitHub action sends notification to Slack based on SARIF file"
+branding:
+  icon: message-square
+  color: red
+inputs:
+  slack-webhook:
+    description: Target Slack webhook URL.
+    required: true
+  sarif-path:
+    description: Path to the SARIF file.
+    required: true
+  color:
+    description: What color of the message should be.
+    required: false
+    default: "red"
+runs:
+  using: "node20"
+  main: "dist/index.js"

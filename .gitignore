@@ -1,0 +1,15 @@
+.nyc_output
+.vscode/*
+!.vscode/settings.json
+.env
+.idea
+coverage
+node_modules
+yarn-error.log
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
