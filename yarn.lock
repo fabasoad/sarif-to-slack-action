@@ -999,6 +999,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/sarif@npm:2.1.7":
+  version: 2.1.7
+  resolution: "@types/sarif@npm:2.1.7"
+  checksum: 10c0/983d593735c42b288c3d95bb1655b036652438d267eecb2cd5d0f8c613ac98ae198eb7828dc171776e64a6ebe93e88c920ec9b80cf3c780e015e081ac5d26c01
+  languageName: node
+  linkType: hard
+
 "@types/stack-utils@npm:^2.0.0":
   version: 2.0.3
   resolution: "@types/stack-utils@npm:2.0.3"
@@ -3355,6 +3362,7 @@ __metadata:
     "@biomejs/biome": "npm:1.9.4"
     "@slack/webhook": "npm:7.0.5"
     "@types/jest": "npm:29.5.14"
+    "@types/sarif": "npm:2.1.7"
     "@vercel/ncc": "npm:0.38.3"
     jest: "npm:29.7.0"
     jest-circus: "npm:29.7.0"
