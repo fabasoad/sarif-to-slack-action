@@ -40,7 +40,7 @@ repos:
     hooks:
       - id: detect-secrets
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.0
+    rev: v8.25.1
     hooks:
       - id: gitleaks
   - repo: https://github.com/fabasoad/pre-commit-snyk
@@ -60,7 +60,7 @@ repos:
           - --hook-args=--log-level debug
         stages: ["pre-push"]
   - repo: https://github.com/google/osv-scanner
-    rev: v2.0.0
+    rev: v2.0.2
     hooks:
       - id: osv-scanner
         args:
@@ -75,7 +75,7 @@ repos:
         stages: ["pre-commit"]
   # Yaml
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.36.2
+    rev: v1.37.1
     hooks:
       - id: yamllint
         stages: ["pre-push"]
