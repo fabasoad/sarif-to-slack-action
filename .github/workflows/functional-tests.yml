@@ -1,0 +1,31 @@
+---
+name: Functional Tests
+
+on: # yamllint disable-line rule:truthy
+  pull_request:
+    paths:
+      - dist/**
+      - src/**
+      - jest.config.json
+  push:
+    branches:
+      - main
+      - feat/test
+
+defaults:
+  run:
+    shell: sh
+
+jobs:
+  functional-tests:
+    name: Send
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ${{ github.repository }}
+        uses: actions/checkout@v4
+      - name: Send message
+        uses: ./
+        with:
+          slack-webhook: "${{ secrets.TMP_EUGENE_SLACK_WEBHOOK }}"
+          sarif-path: ""
