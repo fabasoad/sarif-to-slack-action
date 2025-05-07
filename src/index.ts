@@ -8,9 +8,12 @@ async function run() {
   const color: string = getInput('color')
   // const jsonString = await fs.readFile(sarifPath, 'utf8')
   // const sarif = JSON.parse(jsonString)
-  const webhook = new IncomingWebhook(webhookUrl)
+  const webhook = new IncomingWebhook(webhookUrl, {
+    icon_url: 'https://cdn-icons-png.flaticon.com/512/9070/9070006.png'
+  })
 
   const repo = 'wp-appsec/github-actions-dashboard'
+  const actor = 'yevhen-fabizhevskyi_stargate'
   const analysisType = 'IaC analysis'
   const critical = 0
   const high = 0
@@ -25,28 +28,23 @@ async function run() {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: 'yevhen-fabizhevskyi_stargate'
+          text: analysisType
         }
       },
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${repo}*\n_${analysisType}_\nCRITICAL: ${critical}, HIGH: ${high}, MEDIUM: ${medium}, LOW: ${low}, INFO: ${info}\nJob <${jobUrl}|${jobId}>`,
+          text: `*${repo}*\n_Triggered by ${actor}_\n*CRITICAL*: ${critical}, *HIGH*: ${high}, *MEDIUM*: ${medium}, *LOW*: ${low}, *INFO*: ${info}\nJob <${jobUrl}|${jobId}>`,
         },
       },
       {
         type: 'context',
         elements: [
           {
-            type: 'mrkdwn',
+            type: 'plain_text',
             text: 'Production Infrastructure Security team - @prodsec',
-          },
-          {
-            type: 'image',
-            image_url: 'https://cdn-icons-png.flaticon.com/512/9070/9070006.png',
-            alt_text: 'icon',
-          },
+          }
         ],
       },
     ]
