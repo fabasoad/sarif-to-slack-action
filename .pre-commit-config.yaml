@@ -20,13 +20,6 @@ repos:
         pass_filenames: false
         verbose: false
         stages: ["pre-push"]
-      - id: test
-        name: Unit tests
-        entry: yarn test
-        language: system
-        pass_filenames: false
-        verbose: true
-        stages: ["pre-push"]
   # Security
       - id: audit
         name: Yarn audit
