@@ -9,6 +9,7 @@ async function run() {
   // const jsonString = await fs.readFile(sarifPath, 'utf8')
   // const sarif = JSON.parse(jsonString)
   const webhook = new IncomingWebhook(webhookUrl, {
+    username: 'Application Security',
     icon_url: 'https://cdn-icons-png.flaticon.com/512/9070/9070006.png'
   })
 
@@ -23,29 +24,34 @@ async function run() {
   const jobUrl = 'https://job-url.com'
   const jobId = '12345'
   const { text } = await webhook.send({
-    blocks: [
+    attachments: [
       {
-        type: 'header',
-        text: {
-          type: 'plain_text',
-          text: analysisType
-        }
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*${repo}*\n_Triggered by ${actor}_\n*CRITICAL*: ${critical}, *HIGH*: ${high}, *MEDIUM*: ${medium}, *LOW*: ${low}, *INFO*: ${info}\nJob <${jobUrl}|${jobId}>`,
-        },
-      },
-      {
-        type: 'context',
-        elements: [
+        color: 'danger',
+        blocks: [
           {
-            type: 'plain_text',
-            text: 'Production Infrastructure Security team - @prodsec',
-          }
-        ],
+            type: 'header',
+            text: {
+              type: 'plain_text',
+              text: analysisType
+            }
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*${repo}*\n_Triggered by ${actor}_\n*CRITICAL*: ${critical}, *HIGH*: ${high}, *MEDIUM*: ${medium}, *LOW*: ${low}, *INFO*: ${info}\nJob <${jobUrl}|${jobId}>`,
+            },
+          },
+          {
+            type: 'context',
+            elements: [
+              {
+                type: 'plain_text',
+                text: 'Production Infrastructure Security team - @prodsec',
+              }
+            ],
+          },
+        ]
       },
     ]
   })
