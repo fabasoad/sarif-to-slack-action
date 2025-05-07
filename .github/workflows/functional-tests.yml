@@ -29,3 +29,4 @@ jobs:
         with:
           slack-webhook: "${{ secrets.TMP_EUGENE_SLACK_WEBHOOK }}"
           sarif-path: ""
+          color: "red"
