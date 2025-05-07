@@ -26,7 +26,7 @@ async function run() {
   const { text } = await webhook.send({
     attachments: [
       {
-        color: 'danger',
+        color: '#FF0000',
         blocks: [
           {
             type: 'header',
@@ -39,7 +39,7 @@ async function run() {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `*${repo}*\n_Triggered by ${actor}_\n*CRITICAL*: ${critical}, *HIGH*: ${high}, *MEDIUM*: ${medium}, *LOW*: ${low}, *INFO*: ${info}\nJob <${jobUrl}|${jobId}>`,
+              text: `*${repo}*\n_Triggered by *${actor}*_\n*CRITICAL*: ${critical}, *HIGH*: ${high}, *MEDIUM*: ${medium}, *LOW*: ${low}, *INFO*: ${info}\nJob <${jobUrl}|#${jobId}>`,
             },
           },
           {
