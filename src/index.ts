@@ -54,8 +54,8 @@ async function run() {
   }
   const webhook = new IncomingWebhook(webhookUrl, webhookOptions)
 
-  const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-  const runId = `#${process.env.GITHUB_RUN_ID}`
+  const runUrl = 'runUrl'//`${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+  const runId = 'runId'//`#${process.env.GITHUB_RUN_ID}`
   const summary = 'summary'//composeSummary(sarif)
 
   const { text } = await webhook.send({
