@@ -44,6 +44,7 @@ async function run() {
 
   const jsonString = await fs.readFile(sarifPath, 'utf8')
   const sarif = JSON.parse(jsonString) as Log
+  console.log('Length:', sarif.runs.length)
 
   const webhookOptions: IncomingWebhookDefaultArguments = {
     username: 'Application Security'
@@ -55,7 +56,7 @@ async function run() {
 
   const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
   const runId = `#${process.env.GITHUB_RUN_ID}`
-  const summary = composeSummary(sarif)
+  const summary = 'summary'//composeSummary(sarif)
 
   const { text } = await webhook.send({
     attachments: [
