@@ -21,6 +21,29 @@ jobs:
     name: Send
     timeout-minutes: 5
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sarif-file:
+          - codeql-csharp.sarif
+          - codeql-go.sarif
+          - codeql-python.sarif
+          - codeql-ruby.sarif
+          - codeql-typescript.sarif
+          - snyk-csharp-nuget.sarif
+          - snyk-elixir-hex.sarif
+          - snyk-go-gomodules.sarif
+          - snyk-java-gradle.sarif
+          - snyk-java-maven.sarif
+          - snyk-javascript-npm.sarif
+          - snyk-javascript-pnpm.sarif
+          - snyk-javascript-yarn.sarif
+          - snyk-php-composer.sarif
+          - snyk-python-pip.sarif
+          - snyk-python-poetry.sarif
+          - snyk-ruby-rubygems.sarif
+          - snyk-scala-sbt.sarif
+          - snyk-swift-swift.sarif
     steps:
       - name: Checkout ${{ github.repository }}
         uses: actions/checkout@v4
@@ -28,6 +51,6 @@ jobs:
         uses: ./
         with:
           slack-webhook: "${{ secrets.TMP_EUGENE_SLACK_WEBHOOK }}"
-          sarif-path: "test-data/sarif/snyk-csharp-nuget.sarif"
+          sarif-path: "test-data/sarif/${{ matrix.sarif-file }}"
           color: "#FF0000"
           icon: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
