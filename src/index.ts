@@ -44,7 +44,6 @@ async function run() {
 
   const jsonString = await fs.readFile(sarifPath, 'utf8')
   const sarif = JSON.parse(jsonString) as Log
-  console.log('Length:', sarif.runs.length)
 
   const webhookOptions: IncomingWebhookDefaultArguments = {
     username: 'Application Security'
@@ -54,38 +53,41 @@ async function run() {
   }
   const webhook = new IncomingWebhook(webhookUrl, webhookOptions)
 
-  const runUrl = 'runUrl'//`${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-  const runId = 'runId'//`#${process.env.GITHUB_RUN_ID}`
-  const summary = 'summary'//composeSummary(sarif)
+  const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+  const runId = `#${process.env.GITHUB_RUN_ID}`
+  const summary: string = composeSummary(sarif)
+  console.log('Run ID:', runId)
+  console.log('Run URL:', runUrl)
+  console.log('Summary:', summary)
 
-  const { text } = await webhook.send({
-    attachments: [
-      {
-        color: color,
-        author_name: process.env.GITHUB_ACTOR,
-        author_subname: process.env.GITHUB_REPOSITORY,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `${summary}\nJob <${runUrl}|${runId}>`,
-            },
-          },
-          {
-            type: 'context',
-            elements: [
-              {
-                type: 'plain_text',
-                text: 'Production Infrastructure Security team - @prodsec',
-              }
-            ],
-          },
-        ]
-      },
-    ]
-  })
-  console.log('Message sent:', text)
+  // const { text } = await webhook.send({
+  //   attachments: [
+  //     {
+  //       color: color,
+  //       author_name: process.env.GITHUB_ACTOR,
+  //       author_subname: process.env.GITHUB_REPOSITORY,
+  //       blocks: [
+  //         {
+  //           type: 'section',
+  //           text: {
+  //             type: 'mrkdwn',
+  //             text: `${summary}\nJob <${runUrl}|${runId}>`,
+  //           },
+  //         },
+  //         {
+  //           type: 'context',
+  //           elements: [
+  //             {
+  //               type: 'plain_text',
+  //               text: 'Production Infrastructure Security team - @prodsec',
+  //             }
+  //           ],
+  //         },
+  //       ]
+  //     },
+  //   ]
+  // })
+  // console.log('Message sent:', text)
 }
 
 run()
