@@ -28,5 +28,6 @@ jobs:
         uses: ./
         with:
           slack-webhook: "${{ secrets.TMP_EUGENE_SLACK_WEBHOOK }}"
-          sarif-path: ""
-          color: "red"
+          sarif-path: "test-data/sarif/snyk-csharp-nuget.sarif"
+          color: "#FF0000"
+          icon: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"

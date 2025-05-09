@@ -16,6 +16,9 @@ inputs:
     description: What color of the message should be.
     required: false
     default: "red"
+  icon:
+    description: Slack message icon.
+    required: false
 runs:
   using: "node20"
   main: "dist/index.js"
