@@ -60,34 +60,39 @@ async function run() {
   console.log('Run URL:', runUrl)
   console.log('Summary:', summary)
 
-  // const { text } = await webhook.send({
-  //   attachments: [
-  //     {
-  //       color: color,
-  //       author_name: process.env.GITHUB_ACTOR,
-  //       author_subname: process.env.GITHUB_REPOSITORY,
-  //       blocks: [
-  //         {
-  //           type: 'section',
-  //           text: {
-  //             type: 'mrkdwn',
-  //             text: `${summary}\nJob <${runUrl}|${runId}>`,
-  //           },
-  //         },
-  //         {
-  //           type: 'context',
-  //           elements: [
-  //             {
-  //               type: 'plain_text',
-  //               text: 'Production Infrastructure Security team - @prodsec',
-  //             }
-  //           ],
-  //         },
-  //       ]
-  //     },
-  //   ]
-  // })
-  // console.log('Message sent:', text)
+  const { text } = await webhook.send({
+    attachments: [
+      {
+        color: color,
+        blocks: [
+          {
+            type: 'header',
+            text: {
+              type: 'plain_text',
+              text: process.env.GITHUB_REPOSITORY || ''
+            }
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `_Triggered by ${process.env.GITHUB_ACTOR}_\n${summary}\nJob <${runUrl}|${runId}>`,
+            },
+          },
+          {
+            type: 'context',
+            elements: [
+              {
+                type: 'plain_text',
+                text: 'Production Infrastructure Security team - @prodsec',
+              }
+            ],
+          },
+        ]
+      },
+    ]
+  })
+  console.log('Message sent:', text)
 }
 
 run()
