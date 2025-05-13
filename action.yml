@@ -15,7 +15,7 @@ inputs:
   color:
     description: What color of the message should be.
     required: false
-    default: "red"
+    default: "#ff0000"
   username:
     description: Slack message username.
     required: false
