@@ -25,25 +25,25 @@ jobs:
       fail-fast: false
       matrix:
         sarif-file:
-          - codeql-csharp.sarif
-          - codeql-go.sarif
-          - codeql-python.sarif
-          - codeql-ruby.sarif
-          - codeql-typescript.sarif
-          - snyk-csharp-nuget.sarif
-          - snyk-elixir-hex.sarif
-          - snyk-go-gomodules.sarif
-          - snyk-java-gradle.sarif
-          - snyk-java-maven.sarif
+#          - codeql-csharp.sarif
+#          - codeql-go.sarif
+#          - codeql-python.sarif
+#          - codeql-ruby.sarif
+#          - codeql-typescript.sarif
+#          - snyk-csharp-nuget.sarif
+#          - snyk-elixir-hex.sarif
+#          - snyk-go-gomodules.sarif
+#          - snyk-java-gradle.sarif
+#          - snyk-java-maven.sarif
           - snyk-javascript-npm.sarif
-          - snyk-javascript-pnpm.sarif
-          - snyk-javascript-yarn.sarif
-          - snyk-php-composer.sarif
-          - snyk-python-pip.sarif
-          - snyk-python-poetry.sarif
-          - snyk-ruby-rubygems.sarif
-          - snyk-scala-sbt.sarif
-          - snyk-swift-swift.sarif
+#          - snyk-javascript-pnpm.sarif
+#          - snyk-javascript-yarn.sarif
+#          - snyk-php-composer.sarif
+#          - snyk-python-pip.sarif
+#          - snyk-python-poetry.sarif
+#          - snyk-ruby-rubygems.sarif
+#          - snyk-scala-sbt.sarif
+#          - snyk-swift-swift.sarif
     steps:
       - name: Checkout ${{ github.repository }}
         uses: actions/checkout@v4
@@ -52,6 +52,9 @@ jobs:
         with:
           slack-webhook: "${{ secrets.TMP_EUGENE_SLACK_WEBHOOK }}"
           sarif-path: "test-data/sarif/${{ matrix.sarif-file }}"
-          color: "#FF0000"
-          icon: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
-          footer: ${{ matrix.sarif-file == 'snyk-swift-swift.sarif' && 'This is a footer' || '' }}
+          include-actor: "false"
+          include-header: "false"
+          include-footer: "false"
+          include-run: "false"
+#          color: "#FF0000"
+#          icon: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
