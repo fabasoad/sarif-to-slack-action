@@ -54,3 +54,4 @@ jobs:
           sarif-path: "test-data/sarif/${{ matrix.sarif-file }}"
           color: "#FF0000"
           icon: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
+          footer: ${{ matrix.sarif-file == 'snyk-swift-swift.sarif' && 'This is a footer' || '' }}
