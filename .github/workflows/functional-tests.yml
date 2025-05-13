@@ -55,6 +55,6 @@ jobs:
           username: ${{ github.repository }}
           include-actor: "false"
           include-header: "false"
-          include-footer: "false"
+          include-footer: "true"
           include-run: "true"
           icon: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
