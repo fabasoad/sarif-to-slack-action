@@ -52,8 +52,9 @@ jobs:
         with:
           slack-webhook: "${{ secrets.TMP_EUGENE_SLACK_WEBHOOK }}"
           sarif-path: "test-data/sarif/${{ matrix.sarif-file }}"
+          username: ${{ github.repository }}
           include-actor: "false"
-          include-header: "true"
+          include-header: "false"
           include-footer: "false"
           include-run: "true"
           icon: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
