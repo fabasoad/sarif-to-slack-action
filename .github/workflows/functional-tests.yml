@@ -38,12 +38,12 @@ jobs:
           - snyk-javascript-npm.sarif
 #          - snyk-javascript-pnpm.sarif
 #          - snyk-javascript-yarn.sarif
-#          - snyk-php-composer.sarif
-#          - snyk-python-pip.sarif
+          - snyk-php-composer.sarif
+          - snyk-python-pip.sarif
 #          - snyk-python-poetry.sarif
-#          - snyk-ruby-rubygems.sarif
-#          - snyk-scala-sbt.sarif
-#          - snyk-swift-swift.sarif
+          - snyk-ruby-rubygems.sarif
+          - snyk-scala-sbt.sarif
+          - snyk-swift-swift.sarif
     steps:
       - name: Checkout ${{ github.repository }}
         uses: actions/checkout@v4
