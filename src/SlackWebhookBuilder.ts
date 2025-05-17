@@ -5,7 +5,7 @@ import type { Log, Result } from 'sarif'
 
 export type SlackWebhookBuilderOptions = {
   username?: string
-  icon?: string
+  iconUrl?: string
   sarif: Log
 }
 
@@ -22,7 +22,7 @@ export class SlackWebhookBuilder {
   constructor(url: string, opts: SlackWebhookBuilderOptions) {
     this.webhook = new IncomingWebhook(url, {
       username: opts?.username || 'SARIF results',
-      icon_url: opts?.icon
+      icon_url: opts?.iconUrl
     })
     this.sarif = opts.sarif
     this.gitHubServerUrl = process.env.GITHUB_SERVER_URL || 'https://github.com'

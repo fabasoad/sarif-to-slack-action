@@ -19,7 +19,7 @@ async function run() {
 
   const webhookBuilder = new SlackWebhookBuilder(webhookUrl, {
     username: getInput('username', { required: false }),
-    icon: getInput('icon', { required: false }),
+    iconUrl: getInput('icon-url', { required: false }),
     sarif: JSON.parse(jsonString) as Log
   })
   if (includeHeader) {
