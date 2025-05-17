@@ -13,9 +13,41 @@ inputs:
     description: Path to the SARIF file.
     required: true
   color:
-    description: What color of the message should be.
+    description: What color of the message should be in hex format.
     required: false
-    default: "red"
+    default: "#ff0000"
+  username:
+    description: Slack message username.
+    required: false
+  icon-url:
+    description: Slack message icon.
+    required: false
+  header:
+    description: Slack message header.
+    required: false
+  include-header:
+    description: Whether to include header in the message.
+    required: false
+    default: "true"
+  footer:
+    description: Slack message footer.
+    required: false
+  include-footer:
+    description: Whether to include footer in the message.
+    required: false
+    default: "true"
+  actor:
+    description: Who triggered the run.
+    required: false
+    default: ${{ github.actor }}
+  include-actor:
+    description: Whether to include actor in the message.
+    required: false
+    default: "true"
+  include-run:
+    description: Whether to include run in the message.
+    required: false
+    default: "true"
 runs:
   using: "node20"
   main: "dist/index.js"
