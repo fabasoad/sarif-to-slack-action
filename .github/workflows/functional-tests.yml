@@ -16,20 +16,20 @@ on: # yamllint disable-line rule:truthy
           - codeql-ruby.sarif
           - codeql-typescript.sarif
           - grype-container.sarif
-          - snyk-csharp-nuget.sarif
-          - snyk-elixir-hex.sarif
-          - snyk-go-gomodules.sarif
-          - snyk-java-gradle.sarif
-          - snyk-java-maven.sarif
-          - snyk-javascript-npm.sarif
-          - snyk-javascript-pnpm.sarif
-          - snyk-javascript-yarn.sarif
-          - snyk-php-composer.sarif
-          - snyk-python-pip.sarif
-          - snyk-python-poetry.sarif
-          - snyk-ruby-rubygems.sarif
-          - snyk-scala-sbt.sarif
-          - snyk-swift-swift.sarif
+          - snyk-composer.sarif
+          - snyk-gomodules.sarif
+          - snyk-gradle.sarif
+          - snyk-hex.sarif
+          - snyk-maven.sarif
+          - snyk-npm.sarif
+          - snyk-nuget.sarif
+          - snyk-pip.sarif
+          - snyk-pnpm.sarif
+          - snyk-poetry.sarif
+          - snyk-rubygems.sarif
+          - snyk-sbt.sarif
+          - snyk-swift.sarif
+          - snyk-yarn.sarif
           - trivy-iac.sarif
       color:
         description: What color of the message should be in hex representation.
