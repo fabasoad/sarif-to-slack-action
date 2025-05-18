@@ -58,14 +58,6 @@ on: # yamllint disable-line rule:truthy
         description: " "
         required: false
         type: string
-      footer-type:
-        description: "Footer type:"
-        required: false
-        type: choice
-        default: rich
-        options:
-          - rich
-          - text
       include-actor:
         description: "Who triggered the run:"
         required: false
@@ -75,6 +67,11 @@ on: # yamllint disable-line rule:truthy
         description: " "
         required: false
         type: string
+      include-run:
+        description: Include run in the message.
+        required: false
+        default: true
+        type: boolean
 
 defaults:
   run:
@@ -149,8 +146,7 @@ jobs:
           header: "${{ inputs.header }}"
           include-header: "${{ inputs.include-header }}"
           footer: "${{ inputs.footer }}"
-          footer-type: "${{ inputs.footer-type }}"
           include-footer: "${{ inputs.include-footer }}"
           actor: "${{ inputs.actor }}"
           include-actor: "${{ inputs.include-actor }}"
-          include-run: "true"
+          include-run: "${{ inputs.include-run }}"
