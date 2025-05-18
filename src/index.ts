@@ -10,6 +10,7 @@ async function run() {
   const header: string = getInput('header', { required: false, trimWhitespace: true })
   const includeHeader: boolean = getBooleanInput('include-header', { required: false })
   const footer: string = getInput('footer', { required: false, trimWhitespace: true })
+  const footerType: string = getInput('footer-type', { required: false, trimWhitespace: true })
   const includeFooter: boolean = getBooleanInput('include-footer', { required: false })
   const actor: string = getInput('actor', { required: false, trimWhitespace: true })
   const includeActor: boolean = getBooleanInput('include-actor', { required: false })
@@ -26,7 +27,7 @@ async function run() {
     webhookBuilder.withHeader(header)
   }
   if (includeFooter) {
-    webhookBuilder.withFooter(footer)
+    webhookBuilder.withFooter(footerType, footer)
   }
   if (includeActor) {
     webhookBuilder.withActor(actor)

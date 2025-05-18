@@ -7,7 +7,7 @@ on: # yamllint disable-line rule:truthy
       sarif:
         description: SARIF to send
         required: true
-        default: "Grype Container (Error: 10, Warning: 20, Note: 9)"
+        default: "Snyk Yarn (Error: 30, Warning: 16, Note: 3)"
         type: choice
         options:
           - "CodeQL C# (Unknown: 1)"
@@ -46,7 +46,7 @@ on: # yamllint disable-line rule:truthy
         default: true
         type: boolean
       header:
-        description: ""
+        description: " "
         required: false
         type: string
       include-footer:
@@ -55,23 +55,26 @@ on: # yamllint disable-line rule:truthy
         default: true
         type: boolean
       footer:
-        description: ""
+        description: " "
         required: false
         type: string
+      footer-type:
+        description: "Footer type:"
+        required: false
+        type: choice
+        default: rich
+        options:
+          - rich
+          - text
       include-actor:
         description: "Who triggered the run:"
         required: false
         default: true
         type: boolean
       actor:
-        description: ""
+        description: " "
         required: false
         type: string
-      include-run:
-        description: Include run in the message.
-        required: false
-        default: true
-        type: boolean
 
 defaults:
   run:
@@ -146,7 +149,8 @@ jobs:
           header: "${{ inputs.header }}"
           include-header: "${{ inputs.include-header }}"
           footer: "${{ inputs.footer }}"
+          footer-type: "${{ inputs.footer-type }}"
           include-footer: "${{ inputs.include-footer }}"
           actor: "${{ inputs.actor }}"
           include-actor: "${{ inputs.include-actor }}"
-          include-run: "${{ inputs.include-run }}"
+          include-run: "true"

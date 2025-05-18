@@ -32,6 +32,12 @@ inputs:
   footer:
     description: Slack message footer.
     required: false
+  footer-type:
+    description: |
+      Either "text" or "rich". If "rich" then the footer will be formatted.
+      If "text" then the footer will be used as is, as plain text.
+    required: false
+    default: "rich"
   include-footer:
     description: Whether to include footer in the message.
     required: false
