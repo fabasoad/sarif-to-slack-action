@@ -56,6 +56,10 @@ This GitHub action sends notification to Slack based on SARIF file.
 
 None.
 
+## Sample
+
+<img alt="Sample" src="sample.png" width="450"/>
+
 ## Contributions
 
 ![Alt](https://repobeats.axiom.co/api/embed/106ae477572cf133c41ff42d3db94da42772e571.svg "Repobeats analytics image")
