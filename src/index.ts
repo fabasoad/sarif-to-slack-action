@@ -1,12 +1,11 @@
 import { getBooleanInput, getInput } from '@actions/core'
 import type { Log } from 'sarif'
 import { promises as fs } from 'fs'
-import { SlackWebhookBuilder } from './SlackWebhookBuilder'
+import { SlackMessageBuilder } from './SlackMessageBuilder'
 
 async function run() {
   const webhookUrl: string = getInput('slack-webhook', { required: true, trimWhitespace: true })
   const sarifPath: string = getInput('sarif-path', { required: true, trimWhitespace: true })
-  const color: string = getInput('color', { required: false, trimWhitespace: true })
   const header: string = getInput('header', { required: false, trimWhitespace: true })
   const includeHeader: boolean = getBooleanInput('include-header', { required: false })
   const footer: string = getInput('footer', { required: false, trimWhitespace: true })
@@ -17,24 +16,25 @@ async function run() {
 
   const jsonString: string = await fs.readFile(sarifPath, 'utf8')
 
-  const webhookBuilder = new SlackWebhookBuilder(webhookUrl, {
-    username: getInput('username', { required: false }),
-    iconUrl: getInput('icon-url', { required: false }),
+  const messageBuilder = new SlackMessageBuilder(webhookUrl, {
+    username: getInput('username', { required: false, trimWhitespace: true }),
+    iconUrl: getInput('icon-url', { required: false, trimWhitespace: true }),
+    color: getInput('color', { required: false, trimWhitespace: true }),
     sarif: JSON.parse(jsonString) as Log
   })
   if (includeHeader) {
-    webhookBuilder.withHeader(header)
+    messageBuilder.withHeader(header)
   }
   if (includeFooter) {
-    webhookBuilder.withFooter(footer)
+    messageBuilder.withFooter(footer)
   }
   if (includeActor) {
-    webhookBuilder.withActor(actor)
+    messageBuilder.withActor(actor)
   }
   if (includeRun) {
-    webhookBuilder.withRun()
+    messageBuilder.withRun()
   }
-  const text: string = await webhookBuilder.send(color)
+  const text: string = await messageBuilder.send()
   console.log('Message sent:', text)
 }
 
