@@ -1,7 +1,7 @@
 import { AnyBlock } from '@slack/types'
 import { HeaderBlock, ContextBlock } from '@slack/types/dist/block-kit/blocks'
 import { IncomingWebhook } from '@slack/webhook'
-import type { Log, Result } from 'sarif'
+import type { Log, Run, Result, ReportingDescriptor } from 'sarif'
 
 export type SlackMessageBuilderOptions = {
   username?: string
@@ -9,6 +9,8 @@ export type SlackMessageBuilderOptions = {
   color?: string
   sarif: Log
 }
+
+type RuleData = { id?: string, index?: number }
 
 export class SlackMessageBuilder {
   private readonly webhook: IncomingWebhook
@@ -118,7 +120,7 @@ export class SlackMessageBuilder {
       }
       const results: Result[] = run.results ?? []
       for (const result of results) {
-        const level = result.level ?? 'unknown'
+        const level: string = this.tryGetLevel(run, result)
         const count: number = data.get(toolName)?.get(level) || 0
         data.get(toolName)?.set(level, count + 1)
       }
@@ -128,5 +130,37 @@ export class SlackMessageBuilder {
       summaries.push(this.composeRunSummary(toolName, map))
     }
     return summaries.join('\n')
+  }
+
+  private tryGetLevel(run: Run, result: Result): string {
+    if (result.level) {
+      return result.level
+    }
+
+    const ruleData: RuleData = {}
+
+    if (result.rule) {
+      if (result.rule?.index) {
+        ruleData.index = result.rule.index
+      }
+      if (result.rule?.id) {
+        ruleData.id = result.rule.id
+      }
+    }
+
+    if (!ruleData.index && result.ruleIndex) {
+      ruleData.index = result.ruleIndex
+    }
+
+    if (ruleData.index
+      && run.tool.driver?.rules
+      && ruleData.index < run.tool.driver.rules.length) {
+      const rule: ReportingDescriptor = run.tool.driver.rules[ruleData.index]
+      if (rule.properties && 'problem.severity' in rule.properties) {
+        return rule.properties['problem.severity'] as string
+      }
+    }
+
+    return 'unknown'
   }
 }

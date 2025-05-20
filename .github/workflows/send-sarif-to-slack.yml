@@ -17,7 +17,7 @@ on: # yamllint disable-line rule:truthy
           - "CodeQL TypeScript (Unknown: 1)"
           - "Grype Container (Error: 10, Warning: 20, Note: 9)"
           - "Snyk Composer (Error: 15, Warning: 5)"
-          - "Snyk Container"
+          - "Snyk Container (Error: 1, Note: 3)"
           - "Snyk Gomodules (Error: 4, Warning: 4)"
           - "Snyk Gradle (Error: 3, Warning: 1)"
           - "Snyk Hex (Error: 1)"
@@ -32,8 +32,8 @@ on: # yamllint disable-line rule:truthy
           - "Snyk Swift (Warning: 2)"
           - "Snyk Yarn (Error: 30, Warning: 16, Note: 3)"
           - "Trivy IaC (Error: 1, Note: 1)"
-          - "Wiz Container"
-          - "Wiz IaC"
+          - "Wiz Container (Error: 12, Warning: 369, Note: 191)"
+          - "Wiz IaC (Warning: 5, Note: 5)"
       color:
         description: "Slack message color (hex):"
         required: false
@@ -107,7 +107,7 @@ jobs:
             value="grype-container.sarif"
           elif [ "${INPUT_SARIF}" = "Snyk Composer (Error: 15, Warning: 5)" ]; then
             value="snyk-composer.sarif"
-          elif [ "${INPUT_SARIF}" = "Snyk Container" ]; then
+          elif [ "${INPUT_SARIF}" = "Snyk Container (Error: 1, Note: 3)" ]; then
             value="snyk-container.sarif"
           elif [ "${INPUT_SARIF}" = "Snyk Gomodules (Error: 4, Warning: 4)" ]; then
             value="snyk-gomodules.sarif"
@@ -137,10 +137,10 @@ jobs:
             value="snyk-yarn.sarif"
           elif [ "${INPUT_SARIF}" = "Trivy IaC (Error: 1, Note: 1)" ]; then
             value="trivy-iac.sarif"
-          elif [ "${INPUT_SARIF}" = "Wiz Container" ]; then
+          elif [ "${INPUT_SARIF}" = "Wiz Container (Error: 12, Warning: 369, Note: 191)" ]; then
             value="wiz-container.sarif"
           else
-            # Wiz IaC
+            # Wiz IaC (Warning: 5, Note: 5)
             value="wiz-iac.sarif"
           fi
           echo "value=${value}" >> "$GITHUB_OUTPUT"
