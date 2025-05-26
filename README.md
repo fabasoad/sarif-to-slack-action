@@ -4,8 +4,6 @@
 ![Releases](https://img.shields.io/github/v/release/fabasoad/sarif-to-slack-action?include_prereleases)
 ![security](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/security.yml/badge.svg)
 ![linting](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/linting.yml/badge.svg)
-[![Maintainability](https://api.codeclimate.com/v1/badges/84bb3beceb9503272bc9/maintainability)](https://codeclimate.com/github/fabasoad/sarif-to-slack-action/maintainability)
-[![Test Coverage](https://api.codeclimate.com/v1/badges/84bb3beceb9503272bc9/test_coverage)](https://codeclimate.com/github/fabasoad/sarif-to-slack-action/test_coverage)
 
 This GitHub action sends notification to Slack based on SARIF file.
 
@@ -16,6 +14,7 @@ This GitHub action sends notification to Slack based on SARIF file.
   * [Contents](#contents)
   * [Inputs](#inputs)
   * [Outputs](#outputs)
+  * [Sample](#sample)
   * [Contributions](#contributions)
 <!-- TOC -->
 
@@ -34,7 +33,7 @@ This GitHub action sends notification to Slack based on SARIF file.
     # (Optional) Slack message username. Defaults to "SARIF results".
     username: "${{ github.repository }}"
     # (Optional) Slack message icon URL. Defaults to the default Slack icon.
-    icon-url: "https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png"
+    icon-url: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
     # (Optional) Slack message header. Defaults to $GITHUB_REPOSITORY.
     header: "Security scanning results"
     # (Optional) Whether to include header in the message. Defaults to "true".
