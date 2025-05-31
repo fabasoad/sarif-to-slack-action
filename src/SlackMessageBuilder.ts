@@ -2,7 +2,6 @@ import { AnyBlock } from '@slack/types'
 import { HeaderBlock, ContextBlock } from '@slack/types/dist/block-kit/blocks'
 import { IncomingWebhook } from '@slack/webhook'
 import type { Log, Run, Result, ReportingDescriptor } from 'sarif'
-import { processColor } from './Processors'
 
 export type SlackMessageBuilderOptions = {
   username?: string
@@ -29,7 +28,7 @@ export class SlackMessageBuilder {
       username: opts.username || 'SARIF results',
       icon_url: opts.iconUrl
     })
-    this.color = processColor(opts.color)
+    this.color = opts.color
     this.sarif = opts.sarif
     this.gitHubServerUrl = process.env.GITHUB_SERVER_URL || 'https://github.com'
   }
