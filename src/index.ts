@@ -1,6 +1,7 @@
 import { getBooleanInput, getInput } from '@actions/core'
 import type { Log } from 'sarif'
 import { promises as fs } from 'fs'
+import logger from './lib/Logger'
 import { processColor, processSarifPath } from './Processors'
 import { SlackMessageBuilder } from './SlackMessageBuilder'
 
@@ -42,7 +43,7 @@ async function run() {
       messageBuilder.withRun()
     }
     const text: string = await messageBuilder.send()
-    console.log(`Message sent for ${sarifFile} file. Status:`, text)
+    logger.info(`Message sent for ${sarifFile} file. Status:`, text)
   }
 }
 

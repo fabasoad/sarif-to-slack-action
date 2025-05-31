@@ -3872,6 +3872,7 @@ __metadata:
     jest: "npm:29.7.0"
     jest-circus: "npm:30.0.0-beta.3"
     ts-jest: "npm:29.3.4"
+    tslog: "npm:4.9.3"
     typescript: "npm:5.8.3"
   languageName: unknown
   linkType: soft
@@ -4206,6 +4207,13 @@ __metadata:
   bin:
     ts-jest: cli.js
   checksum: 10c0/68ed5abbbdb16ff8a9df2ba7ebb8e19ea4fffe87db7e0b59d842d674e7935af8b375b51a69c2cc9215ef22a6325a9f99b80ab97f5c300c30910695000e3bfeee
+  languageName: node
+  linkType: hard
+
+"tslog@npm:4.9.3":
+  version: 4.9.3
+  resolution: "tslog@npm:4.9.3"
+  checksum: 10c0/9db2c02b01be44a97e447061958565ceb8faf33a241cf9c030d5f1ebefff74434b66090985f5a75189a514aae2267999851c281b8cd8dc8cd93dd158b1033319
   languageName: node
   linkType: hard
 
