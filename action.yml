@@ -10,7 +10,9 @@ inputs:
     description: Target Slack webhook URL.
     required: true
   sarif-path:
-    description: Path to the SARIF file.
+    description: |
+      Path to the directory with SARIF files or to the SARIF file itself. Separate
+      Slack messages will be sent for each SARIF file found in the directory.
     required: true
   color:
     description: What color of the message should be in hex format.

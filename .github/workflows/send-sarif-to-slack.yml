@@ -34,6 +34,7 @@ on: # yamllint disable-line rule:truthy
           - "Trivy IaC (Error: 1, Note: 1)"
           - "Wiz Container (Error: 12, Warning: 369, Note: 191)"
           - "Wiz IaC (Warning: 5, Note: 5)"
+          - "All"
       color:
         description: "Slack message color (hex):"
         required: false
@@ -139,9 +140,11 @@ jobs:
             value="trivy-iac.sarif"
           elif [ "${INPUT_SARIF}" = "Wiz Container (Error: 12, Warning: 369, Note: 191)" ]; then
             value="wiz-container.sarif"
-          else
-            # Wiz IaC (Warning: 5, Note: 5)
+          elif [ "${INPUT_SARIF}" = "Wiz IaC (Warning: 5, Note: 5)" ]; then
             value="wiz-iac.sarif"
+          else
+            # All
+            value=""
           fi
           echo "value=${value}" >> "$GITHUB_OUTPUT"
       - name: Send message
