@@ -27,7 +27,7 @@ export function processSarifPath(sarifPath: string): string[] {
     const files: string[] = fs.readdirSync(sarifPath)
     return files.filter((file: string) =>
       path.extname(file).toLowerCase() === '.sarif'
-    )
+    ).map((file: string) => path.join(sarifPath, file))
   }
 
   if (sarifStats.isFile()) {
