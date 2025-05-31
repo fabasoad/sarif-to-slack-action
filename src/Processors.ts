@@ -17,20 +17,20 @@ export function processColor(color?: string): string | undefined {
       logger.info(`Converting "${color}" to #808080`)
       return '#808080'
     default:
-      logger.info(`"${color}" color is not recognized, returning as is`)
+      logger.info(`"${color}" color is not a CI status identifier. Returning as is...`)
       return color
   }
 }
 
 export function processSarifPath(sarifPath: string): string[] {
   if (!fs.existsSync(sarifPath)) {
-    throw new Error(`Provided SARIF path does not exist: ${sarifPath}`)
+    throw new Error(`"sarif-path" does not exist: ${sarifPath}`)
   }
 
   const sarifStats: fs.Stats = fs.statSync(sarifPath)
 
   if (sarifStats.isDirectory()) {
-    logger.info(`sarifPath is a directory: ${sarifPath}`)
+    logger.info(`"sarif-path" is a directory: ${sarifPath}`)
     const files: string[] = fs.readdirSync(sarifPath)
     const filteredFiles: string[] = files.filter((file: string) =>
       path.extname(file).toLowerCase() === '.sarif'
@@ -41,9 +41,9 @@ export function processSarifPath(sarifPath: string): string[] {
   }
 
   if (sarifStats.isFile()) {
-    logger.info(`sarifPath is a file: ${sarifPath}`)
+    logger.info(`"sarif-path" is a file: ${sarifPath}`)
     return [sarifPath]
   }
 
-  throw new Error(`Provided SARIF path is neither a file nor a directory: ${sarifPath}`)
+  throw new Error(`"sarif-path" is neither a file nor a directory: ${sarifPath}`)
 }
