@@ -1,4 +1,5 @@
 import fs from 'fs'
+import * as path from 'path'
 import { processColor, processSarifPath } from '../Processors'
 
 jest.mock('fs')
@@ -49,7 +50,9 @@ describe('processSarifPath', () => {
     // @ts-ignore: mocking readdirSync with a specific return value
     mockedFs.readdirSync.mockReturnValue(['a.sarif', 'b.SARIF', 'c.txt'])
     const result: string[] = processSarifPath(fakeDir)
-    expect(result).toEqual(['a.sarif', 'b.SARIF'])
+    expect(result).toEqual(
+      ['a.sarif', 'b.SARIF'].map((file: string) => path.join(fakeDir, file))
+    )
   })
 
   test('returns file path if it is a file', () => {
