@@ -15,7 +15,7 @@ describe('processColor', () => {
   })
 
   test('returns correct hex for cancelled', () => {
-    expect(processColor('cancelled')).toBe('#0047AB')
+    expect(processColor('cancelled')).toBe('#0047ab')
   })
 
   test('returns correct hex for skipped', () => {
