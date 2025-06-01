@@ -1,7 +1,6 @@
 import { getBooleanInput, getInput } from '@actions/core'
 import type { Log } from 'sarif'
 import { promises as fs } from 'fs'
-import { ILogObj, Logger } from 'tslog'
 import LoggerInstance from './lib/LoggerInstance'
 import { processColor, processLogLevel, processSarifPath } from './Processors'
 import { SlackMessageBuilder } from './SlackMessageBuilder'
@@ -19,7 +18,6 @@ async function run() {
   const includeRun: boolean = getBooleanInput('include-run', { required: false })
 
   LoggerInstance.initialize({ logLevel: processLogLevel(logLevel) })
-  const logger: Logger<ILogObj> = LoggerInstance.get()
 
   const sarifFiles: string[] = processSarifPath(sarifPath)
   if (sarifFiles.length === 0) {
@@ -48,7 +46,7 @@ async function run() {
       messageBuilder.withRun()
     }
     const text: string = await messageBuilder.send()
-    logger.info(`Message sent for ${sarifFile} file. Status:`, text)
+    LoggerInstance.get().info(`Message sent for ${sarifFile} file. Status:`, text)
   }
 }
 
