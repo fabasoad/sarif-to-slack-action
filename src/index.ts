@@ -1,13 +1,15 @@
 import { getBooleanInput, getInput } from '@actions/core'
 import type { Log } from 'sarif'
 import { promises as fs } from 'fs'
-import logger from './lib/Logger'
-import { processColor, processSarifPath } from './Processors'
+import { ILogObj, Logger } from 'tslog'
+import LoggerInstance from './lib/LoggerInstance'
+import { processColor, processLogLevel, processSarifPath } from './Processors'
 import { SlackMessageBuilder } from './SlackMessageBuilder'
 
 async function run() {
   const webhookUrl: string = getInput('slack-webhook', { required: true, trimWhitespace: true })
   const sarifPath: string = getInput('sarif-path', { required: true, trimWhitespace: true })
+  const logLevel: string = getInput('log-level', { required: false, trimWhitespace: true })
   const header: string = getInput('header', { required: false, trimWhitespace: true })
   const includeHeader: boolean = getBooleanInput('include-header', { required: false })
   const footer: string = getInput('footer', { required: false, trimWhitespace: true })
@@ -15,6 +17,9 @@ async function run() {
   const actor: string = getInput('actor', { required: false, trimWhitespace: true })
   const includeActor: boolean = getBooleanInput('include-actor', { required: false })
   const includeRun: boolean = getBooleanInput('include-run', { required: false })
+
+  LoggerInstance.initialize({ logLevel: processLogLevel(logLevel) })
+  const logger: Logger<ILogObj> = LoggerInstance.get()
 
   const sarifFiles: string[] = processSarifPath(sarifPath)
   if (sarifFiles.length === 0) {

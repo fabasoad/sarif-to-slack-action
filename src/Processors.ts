@@ -1,6 +1,8 @@
 import fs from 'fs'
 import * as path from 'path'
-import logger from './lib/Logger'
+import { ILogObj, Logger } from 'tslog'
+import LoggerInstance from './lib/LoggerInstance'
+const logger: Logger<ILogObj> = LoggerInstance.get()
 
 export function processColor(color?: string): string | undefined {
   switch (color) {
@@ -19,6 +21,27 @@ export function processColor(color?: string): string | undefined {
     default:
       logger.info(`"${color}" color is not a CI status identifier. Returning as is...`)
       return color
+  }
+}
+
+export function processLogLevel(logLevel: string): number {
+  switch (logLevel.toLowerCase()) {
+    case 'silly':
+      return 0
+    case 'trace':
+      return 1
+    case 'debug':
+      return 2
+    case 'info':
+      return 3
+    case 'warning':
+      return 4
+    case 'error':
+      return 5
+    case 'fatal':
+      return 6
+    default:
+      throw new Error(`Unknown log level: ${logLevel}`)
   }
 }
 
