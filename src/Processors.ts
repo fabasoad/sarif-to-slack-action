@@ -17,7 +17,7 @@ export function processColor(color?: string): string | undefined {
       LoggerInstance.get().info(`Converting "${color}" to #808080`)
       return '#808080'
     default:
-      LoggerInstance.get().info(`"${color}" color is not a CI status identifier. Returning as is...`)
+      LoggerInstance.get().debug(`"${color}" color is not a CI status identifier. Returning as is...`)
       return color
   }
 }
@@ -55,10 +55,10 @@ export function processSarifPath(sarifPath: string): string[] {
     const files: string[] = fs.readdirSync(sarifPath)
     const filteredFiles: string[] = files.filter((file: string) =>
       path.extname(file).toLowerCase() === '.sarif'
-    ).map((file: string) => path.join(sarifPath, file))
-    LoggerInstance.get().info(`Found ${filteredFiles.length} SARIF files in directory: ${sarifPath}`)
+    )
+    LoggerInstance.get().info(`Found ${filteredFiles.length} SARIF files in ${sarifPath} directory`)
     LoggerInstance.get().debug(`Filtered SARIF files: ${filteredFiles.join(', ')}`)
-    return filteredFiles
+    return filteredFiles.map((file: string) => path.join(sarifPath, file))
   }
 
   if (sarifStats.isFile()) {
