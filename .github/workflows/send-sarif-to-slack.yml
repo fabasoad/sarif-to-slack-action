@@ -62,6 +62,7 @@ on: # yamllint disable-line rule:truthy
           Header (leave empty for default value, set to "skip" to not include it,
           or set to any string to use it as a header):
         required: false
+        default: "skip"
         type: string
       footer:
         description: |
@@ -74,6 +75,7 @@ on: # yamllint disable-line rule:truthy
           Actor (leave empty for default value, set to "skip" to not include it,
           or set to any string to use it as an actor):
         required: false
+        default: "skip"
         type: string
       include-run:
         description: Include run in the message.
