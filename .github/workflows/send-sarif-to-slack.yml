@@ -34,6 +34,20 @@ on: # yamllint disable-line rule:truthy
           - "Trivy IaC (Error: 1, Note: 1)"
           - "Wiz Container (Error: 12, Warning: 369, Note: 191)"
           - "Wiz IaC (Warning: 5, Note: 5)"
+          - "All"
+      log-level:
+        description: "Log level:"
+        required: false
+        default: info
+        type: choice
+        options:
+          - silly
+          - trace
+          - debug
+          - info
+          - warning
+          - error
+          - fatal
       color:
         description: "Slack message color (hex):"
         required: false
@@ -43,32 +57,25 @@ on: # yamllint disable-line rule:truthy
         description: "Slack message username:"
         required: false
         type: string
-      include-header:
-        description: "Slack message header:"
-        required: false
-        default: true
-        type: boolean
       header:
-        description: " "
+        description: |
+          Header (leave empty for default value, set to "skip" to not include it,
+          or set to any string to use it as a header):
         required: false
+        default: "skip"
         type: string
-      include-footer:
-        description: "Slack message footer:"
-        required: false
-        default: true
-        type: boolean
       footer:
-        description: " "
+        description: |
+          Footer (leave empty for default value, set to "skip" to not include it,
+          or set to any string to use it as a footer):
         required: false
         type: string
-      include-actor:
-        description: "Who triggered the run:"
-        required: false
-        default: true
-        type: boolean
       actor:
-        description: " "
+        description: |
+          Actor (leave empty for default value, set to "skip" to not include it,
+          or set to any string to use it as an actor):
         required: false
+        default: "skip"
         type: string
       include-run:
         description: Include run in the message.
@@ -139,9 +146,11 @@ jobs:
             value="trivy-iac.sarif"
           elif [ "${INPUT_SARIF}" = "Wiz Container (Error: 12, Warning: 369, Note: 191)" ]; then
             value="wiz-container.sarif"
-          else
-            # Wiz IaC (Warning: 5, Note: 5)
+          elif [ "${INPUT_SARIF}" = "Wiz IaC (Warning: 5, Note: 5)" ]; then
             value="wiz-iac.sarif"
+          else
+            # All
+            value=""
           fi
           echo "value=${value}" >> "$GITHUB_OUTPUT"
       - name: Send message
@@ -149,13 +158,14 @@ jobs:
         with:
           slack-webhook: "${{ secrets.TMP_EUGENE_SLACK_WEBHOOK }}"
           sarif-path: "test-data/sarif/${{ steps.sarif-file.outputs.value }}"
+          log-level: "${{ inputs.log-level }}"
           color: "${{ inputs.color }}"
           username: "${{ inputs.username }}"
           icon-url: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
           header: "${{ inputs.header }}"
-          include-header: "${{ inputs.include-header }}"
+          include-header: "${{ inputs.header == 'skip' && 'false' || 'true' }}"
           footer: "${{ inputs.footer }}"
-          include-footer: "${{ inputs.include-footer }}"
+          include-footer: "${{ inputs.footer == 'skip' && 'false' || 'true' }}"
           actor: "${{ inputs.actor }}"
-          include-actor: "${{ inputs.include-actor }}"
+          include-actor: "${{ inputs.actor == 'skip' && 'false' || 'true' }}"
           include-run: "${{ inputs.include-run }}"
