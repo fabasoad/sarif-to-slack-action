@@ -5,6 +5,11 @@ import { processColor, processSarifPath, processLogLevel } from '../Processors'
 jest.mock('fs')
 const mockedFs = fs as jest.Mocked<typeof fs>
 
+jest.mock('../lib/LoggerInstance', () => ({
+  __esModule: true,
+  default: { get: () => ({ info: jest.fn(), debug: jest.fn() }) }
+}))
+
 describe('processColor', () => {
   test('returns correct hex for success', () => {
     expect(processColor('success')).toBe('#008000')
