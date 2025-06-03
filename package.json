@@ -1,12 +1,12 @@
 {
   "name": "sarif-to-slack-action",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "This GitHub action sends notification to Slack based on SARIF file.",
   "main": "dist/index.js",
   "scripts": {
     "build": "ncc build -m src/index.ts",
     "lint": "biome lint --write src",
-    "test": "jest --config=jest.config.json --coverage"
+    "test": "jest --config=jest.config.json --json --outputFile=jest-report.json --coverage"
   },
   "repository": {
     "type": "git",
@@ -34,7 +34,7 @@
     "@types/jest": "29.5.14",
     "@vercel/ncc": "0.38.3",
     "jest": "29.7.0",
-    "jest-circus": "30.0.0-beta.3",
+    "jest-circus": "30.0.0-beta.5",
     "ts-jest": "29.3.4",
     "typescript": "5.8.3"
   },

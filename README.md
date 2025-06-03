@@ -2,8 +2,10 @@
 
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://stand-with-ukraine.pp.ua)
 ![Releases](https://img.shields.io/github/v/release/fabasoad/sarif-to-slack-action?include_prereleases)
+![unit-tests](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/unit-tests.yml/badge.svg)
 ![security](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/security.yml/badge.svg)
 ![linting](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/linting.yml/badge.svg)
+[![codecov](https://codecov.io/gh/fabasoad/sarif-to-slack-action/branch/main/graph/badge.svg?token=908QOYME6H)](https://codecov.io/gh/fabasoad/sarif-to-slack-action)
 
 This GitHub action sends notification to Slack based on SARIF file.
 
