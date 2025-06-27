@@ -6,7 +6,7 @@ export type LoggerConfig = {
 
 export default class LoggerInstance {
   private static instance: Logger<ILogObj>
-  private constructor(private config: LoggerConfig) {}
+  private constructor() {}
 
   static initialize({ logLevel = 3 }: LoggerConfig): void {
     if (!LoggerInstance.instance) {

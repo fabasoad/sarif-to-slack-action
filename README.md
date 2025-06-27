@@ -7,7 +7,7 @@
 ![linting](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/linting.yml/badge.svg)
 [![codecov](https://codecov.io/gh/fabasoad/sarif-to-slack-action/branch/main/graph/badge.svg?token=908QOYME6H)](https://codecov.io/gh/fabasoad/sarif-to-slack-action)
 
-This GitHub action sends notification to Slack based on SARIF file.
+This GitHub action sends a notification to Slack based on the provided SARIF file.
 
 ## Contents
 
@@ -27,7 +27,8 @@ This GitHub action sends notification to Slack based on SARIF file.
   with:
     # (Required) Target Slack webhook URL.
     slack-webhook: "${{ secrets.SLACK_WEBHOOK }}"
-    # (Required) Path to the SARIF file.
+    # (Required) Path to the directory with SARIF files or to the SARIF file itself.
+    # Separate Slack messages will be sent for each SARIF file found in the directory.
     sarif-path: "scanning-results.sarif"
     # (Optional) What color of the message should be in hex format. Defaults to
     # "#ff0000".
