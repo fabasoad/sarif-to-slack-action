@@ -25,9 +25,7 @@
   "homepage": "https://github.com/fabasoad/sarif-to-slack-action#readme",
   "dependencies": {
     "@actions/core": "1.11.1",
-    "@slack/webhook": "7.0.5",
-    "@types/sarif": "2.1.7",
-    "tslog": "4.9.3"
+    "@fabasoad/sarif-to-slack": "0.1.1"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
@@ -38,5 +36,5 @@
     "ts-jest": "29.4.0",
     "typescript": "5.8.3"
   },
-  "packageManager": "yarn@4.9.1"
+  "packageManager": "yarn@4.9.2"
 }
