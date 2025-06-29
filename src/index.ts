@@ -1,53 +1,31 @@
 import { getBooleanInput, getInput } from '@actions/core'
-import type { Log } from 'sarif'
-import { promises as fs } from 'fs'
-import LoggerInstance from './lib/LoggerInstance'
-import { processColor, processLogLevel, processSarifPath } from './Processors'
-import { SlackMessageBuilder } from './SlackMessageBuilder'
+import { SarifToSlackService } from '@fabasoad/sarif-to-slack'
 
-async function run() {
-  const webhookUrl: string = getInput('slack-webhook', { required: true, trimWhitespace: true })
-  const sarifPath: string = getInput('sarif-path', { required: true, trimWhitespace: true })
-  const logLevel: string = getInput('log-level', { required: false, trimWhitespace: true })
-  const header: string = getInput('header', { required: false, trimWhitespace: true })
-  const includeHeader: boolean = getBooleanInput('include-header', { required: false })
-  const footer: string = getInput('footer', { required: false, trimWhitespace: true })
-  const includeFooter: boolean = getBooleanInput('include-footer', { required: false })
-  const actor: string = getInput('actor', { required: false, trimWhitespace: true })
-  const includeActor: boolean = getBooleanInput('include-actor', { required: false })
-  const includeRun: boolean = getBooleanInput('include-run', { required: false })
-
-  LoggerInstance.initialize({ logLevel: processLogLevel(logLevel) })
-
-  const sarifFiles: string[] = processSarifPath(sarifPath)
-  if (sarifFiles.length === 0) {
-    throw new Error(`No SARIF files found at the provided path: ${sarifPath}`)
-  }
-
-  for (const sarifFile of sarifFiles) {
-    const jsonString: string = await fs.readFile(sarifFile, 'utf8')
-
-    const messageBuilder = new SlackMessageBuilder(webhookUrl, {
-      username: getInput('username', { required: false, trimWhitespace: true }),
-      iconUrl: getInput('icon-url', { required: false, trimWhitespace: true }),
-      color: processColor(getInput('color', { required: false, trimWhitespace: true })),
-      sarif: JSON.parse(jsonString) as Log
-    })
-    if (includeHeader) {
-      messageBuilder.withHeader(header)
+export async function run() {
+  const sarifToSlackService: SarifToSlackService = await SarifToSlackService.create({
+    webhookUrl: getInput('slack-webhook', { required: true, trimWhitespace: true }),
+    username: getInput('username', { required: false, trimWhitespace: true }),
+    iconUrl: getInput('icon-url', { required: false, trimWhitespace: true }),
+    color: getInput('color', { required: false, trimWhitespace: true }),
+    sarifPath: getInput('sarif-path', { required: true, trimWhitespace: true }),
+    logLevel: getInput('log-level', { required: false, trimWhitespace: true }),
+    header: {
+      include: getBooleanInput('include-header', { required: false }),
+      value: getInput('header', { required: false, trimWhitespace: true })
+    },
+    footer: {
+      include: getBooleanInput('include-footer', { required: false }),
+      value: getInput('footer', { required: false, trimWhitespace: true })
+    },
+    actor: {
+      include: getBooleanInput('include-actor', { required: false }),
+      value: getInput('actor', { required: false, trimWhitespace: true })
+    },
+    run: {
+      include: getBooleanInput('include-run', { required: false })
     }
-    if (includeFooter) {
-      messageBuilder.withFooter(footer)
-    }
-    if (includeActor) {
-      messageBuilder.withActor(actor)
-    }
-    if (includeRun) {
-      messageBuilder.withRun()
-    }
-    const text: string = await messageBuilder.send()
-    LoggerInstance.get().info(`Message sent for ${sarifFile} file. Status:`, text)
-  }
+  })
+  await sarifToSlackService.sendAll()
 }
 
 run()

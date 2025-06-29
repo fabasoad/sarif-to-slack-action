@@ -539,6 +539,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@fabasoad/sarif-to-slack@npm:0.1.1":
+  version: 0.1.1
+  resolution: "@fabasoad/sarif-to-slack@npm:0.1.1"
+  dependencies:
+    "@slack/webhook": "npm:7.0.5"
+    "@types/sarif": "npm:2.1.7"
+    tslog: "npm:4.9.3"
+  checksum: 10c0/2c653984968d22f0c5d11a0f631748139a50c9cadf78bb41b744e0a771d701910f137ec95dae40f4bb9c665494c5fa494b60a330145b816e8ce51fb44c686c8f
+  languageName: node
+  linkType: hard
+
 "@fastify/busboy@npm:^2.0.0":
   version: 2.1.1
   resolution: "@fastify/busboy@npm:2.1.1"
@@ -1073,11 +1084,11 @@ __metadata:
   linkType: hard
 
 "@types/node@npm:*, @types/node@npm:>=18.0.0":
-  version: 24.0.6
-  resolution: "@types/node@npm:24.0.6"
+  version: 24.0.7
+  resolution: "@types/node@npm:24.0.7"
   dependencies:
     undici-types: "npm:~7.8.0"
-  checksum: 10c0/17f976364358f85294912e04f0de147da6ba5ce3fe495b758df58458241f110475905cd0bb4ace373e9c44a0a7927202043bf0501cc1f7644306bde310c62650
+  checksum: 10c0/be3849816dafc54ec79e6be6dafcf60bdb6466beaf0081b941142d260e2b2864855210dfe5b4395c59b276468528695aefcf4f060ac95cc433b2968e80a311f9
   languageName: node
   linkType: hard
 
@@ -3169,11 +3180,11 @@ __metadata:
   linkType: hard
 
 "napi-postinstall@npm:^0.2.4":
-  version: 0.2.4
-  resolution: "napi-postinstall@npm:0.2.4"
+  version: 0.2.5
+  resolution: "napi-postinstall@npm:0.2.5"
   bin:
     napi-postinstall: lib/cli.js
-  checksum: 10c0/e8c357d7e27848c4af7becf2796afff245a2fc8ba176e1b133410bb1c9934a66d4bc542d0c9f04c73b0ba34ee0486b30b6cd1c62ed3aa36797d394200c9a2a8b
+  checksum: 10c0/c4a1a8ca61aece10a6a7b46b834d7689321c4bb164710df9d896a273f24544084c5be95b47c55208036a06ae5bfa0afabb6a8886985d4438543ee07344b9c90c
   languageName: node
   linkType: hard
 
@@ -3490,14 +3501,12 @@ __metadata:
   dependencies:
     "@actions/core": "npm:1.11.1"
     "@biomejs/biome": "npm:1.9.4"
-    "@slack/webhook": "npm:7.0.5"
+    "@fabasoad/sarif-to-slack": "npm:0.1.1"
     "@types/jest": "npm:30.0.0"
-    "@types/sarif": "npm:2.1.7"
     "@vercel/ncc": "npm:0.38.3"
     jest: "npm:30.0.3"
     jest-circus: "npm:30.0.3"
     ts-jest: "npm:29.4.0"
-    tslog: "npm:4.9.3"
     typescript: "npm:5.8.3"
   languageName: unknown
   linkType: soft
