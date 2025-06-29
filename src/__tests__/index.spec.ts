@@ -30,7 +30,7 @@ jest.mock('@fabasoad/sarif-to-slack', () => ({
 describe('run', () => {
   beforeEach(() => jest.resetAllMocks())
 
-  it('should call SarifToSlackService.create with correct params and sendAll', async () => {
+  test('should call SarifToSlackService.create with correct params and sendAll', async () => {
     // Import the run function dynamically to use the mocks
     await run()
     expect(mockCreate).toHaveBeenCalledWith({
