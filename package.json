@@ -28,11 +28,11 @@
     "@fabasoad/sarif-to-slack": "0.2.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "1.9.4",
+    "@biomejs/biome": "2.1.2",
     "@types/jest": "30.0.0",
     "@vercel/ncc": "0.38.3",
-    "jest": "30.0.3",
-    "jest-circus": "30.0.3",
+    "jest": "30.0.5",
+    "jest-circus": "30.0.5",
     "ts-jest": "29.4.0",
     "typescript": "5.8.3"
   },

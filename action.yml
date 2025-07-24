@@ -21,6 +21,37 @@ inputs:
       running in debug mode, e.g. ACTIONS_STEP_DEBUG is set to "true".
     required: false
     default: info
+  log-template:
+    description: |
+      Specifies the custom log message template to format log outputs, using the
+      same template format as the tslog npm library. More details here:
+      https://github.com/fullstack-build/tslog?tab=readme-ov-file#pretty-templates-and-styles-color-settings
+    required: false
+    default: "[{{logLevelName}}] [{{name}}] {{dateIsoStr}} "
+  calculate-by:
+    description: |
+      Specifies how the summary results in the Slack message are calculated from
+      the SARIF file(s) analysis. Possible values:
+      - "level": Calculates results by the "results[].level" property, or by the
+        "rules[].properties['problem.severity']" property if "results[].level"
+        property does not exist (such as error, warning, note).
+      - "severity": Calculates results by the "rules[].properties['security-severity']"
+        property that has CVSS score. Then this score is transformed into severity
+        value (such as critical, high, medium, low, none).
+    required: false
+    default: "severity"
+  group-by:
+    description: |
+      Controls how analysis results from the SARIF file are grouped and summarized
+      in the Slack message. Possible values:
+      - "tool-name": Groups results by tool name, combining and summarizing results
+        from all runs that use the same tool.
+      - "run": Groups results by each individual SARIF run, even if multiple runs
+        use the same tool.
+      - "total": No grouping; combines all results from all runs and provides a
+        single overall summary.
+    required: false
+    default: "tool-name"
   color:
     description: What color of the message should be in hex format.
     required: false
