@@ -2,9 +2,7 @@
   "compilerOptions": {
     "target": "es2024",
     "module": "commonjs",
-    "lib": [
-      "esnext"
-    ],
+    "lib": ["es2024"],
     "baseUrl": "./",
     "paths": {
       "*": ["src/types/*"]

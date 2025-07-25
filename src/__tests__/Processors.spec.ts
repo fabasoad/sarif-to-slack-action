@@ -1,5 +1,6 @@
 import { processLogLevel } from '../Processors'
 import { LogLevel } from '@fabasoad/sarif-to-slack'
+import { InvalidEnumParameterError } from '../errors'
 
 describe('processLogLevel', () => {
   test('returns 0 for silly', () => {
@@ -36,6 +37,6 @@ describe('processLogLevel', () => {
   })
 
   test('throws for unknown log level', () => {
-    expect(() => processLogLevel('unknown')).toThrow(/Unknown log level/)
+    expect(() => processLogLevel('unknown')).toThrow(InvalidEnumParameterError)
   })
 })
