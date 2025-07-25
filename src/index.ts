@@ -1,5 +1,10 @@
 import { getBooleanInput, getInput } from '@actions/core'
 import { SarifToSlackService } from '@fabasoad/sarif-to-slack'
+import {
+  processCalculateResultsBy,
+  processGroupResultsBy,
+  processLogLevel
+} from './Processors'
 
 export async function run() {
   const sarifToSlackService: SarifToSlackService = await SarifToSlackService.create({
@@ -8,7 +13,11 @@ export async function run() {
     iconUrl: getInput('icon-url', { required: false, trimWhitespace: true }),
     color: getInput('color', { required: false, trimWhitespace: true }),
     sarifPath: getInput('sarif-path', { required: true, trimWhitespace: true }),
-    logLevel: getInput('log-level', { required: false, trimWhitespace: true }),
+    log: {
+      level: processLogLevel(getInput('log-level', { required: false, trimWhitespace: true })),
+      template: getInput('log-template', { required: false, trimWhitespace: false }),
+      colored: false,
+    },
     header: {
       include: getBooleanInput('include-header', { required: false }),
       value: getInput('header', { required: false, trimWhitespace: true })
@@ -23,6 +32,10 @@ export async function run() {
     },
     run: {
       include: getBooleanInput('include-run', { required: false })
+    },
+    output: {
+      groupBy: processGroupResultsBy(getInput('group-by', { required: false, trimWhitespace: true })),
+      calculateBy: processCalculateResultsBy(getInput('calculate-by', { required: false, trimWhitespace: true })),
     }
   })
   await sarifToSlackService.sendAll()
