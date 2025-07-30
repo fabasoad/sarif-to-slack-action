@@ -34,6 +34,7 @@ describe('processLogLevel', () => {
   test('is case-insensitive', () => {
     expect(processLogLevel('ERROR')).toBe(LogLevel.Error)
     expect(processLogLevel('Info')).toBe(LogLevel.Info)
+    expect(processLogLevel('DeBuG')).toBe(LogLevel.Debug)
   })
 
   test('throws for unknown log level', () => {
