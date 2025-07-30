@@ -546,15 +546,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@fabasoad/sarif-to-slack@npm:0.2.4":
-  version: 0.2.4
-  resolution: "@fabasoad/sarif-to-slack@npm:0.2.4"
+"@fabasoad/sarif-to-slack@npm:0.2.5":
+  version: 0.2.5
+  resolution: "@fabasoad/sarif-to-slack@npm:0.2.5"
   dependencies:
     "@slack/webhook": "npm:7.0.5"
     "@types/sarif": "npm:2.1.7"
     immutable: "npm:5.1.3"
     tslog: "npm:4.9.3"
-  checksum: 10c0/5b3e09a390485e83702fdaadbfa061b6aef1657641c5b7e40032ae8bebe8552fe93325a0c6b5eef4978dac100777962a009c0a27673a5643d7bdc847a256e197
+  checksum: 10c0/c36ad6e051594dacdc0df64164e3833904e62bec3cfe2f7ebcd35fb16e43e8da4159a59d8373bc91dbe1e14cd82923e38be65d2b5b2c02c520ef32278651416f
   languageName: node
   linkType: hard
 
@@ -3501,7 +3501,7 @@ __metadata:
   dependencies:
     "@actions/core": "npm:1.11.1"
     "@biomejs/biome": "npm:2.1.3"
-    "@fabasoad/sarif-to-slack": "npm:0.2.4"
+    "@fabasoad/sarif-to-slack": "npm:0.2.5"
     "@types/jest": "npm:30.0.0"
     "@vercel/ncc": "npm:0.38.3"
     jest: "npm:30.0.5"
