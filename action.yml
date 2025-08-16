@@ -9,11 +9,94 @@ inputs:
   slack-webhook:
     description: Target Slack webhook URL.
     required: true
+  username:
+    description: Slack message username.
+    required: false
+  icon-url:
+    description: Slack message icon.
+    required: false
+  color:
+    description: |
+      Default color of the Slack message if specific color was not found. It is
+      a fallback option.
+    required: false
+    default: "#ff0000"
+  color-empty:
+    description: |
+      Color of the message when there are no findings in the provided SARIF file(s).
+    required: false
+    default: "#d3d3d3"
+  color-severity-critical:
+    description: |
+      Color of the message when at least one finding has "Critical" severity.
+    required: false
+    default: "#ff0000"
+  color-severity-high:
+    description: |
+      Color of the message when at least one finding has "High" severity.
+    required: false
+    default: "#ff4500"
+  color-severity-medium:
+    description: |
+      Color of the message when at least one finding has "Medium" severity.
+    required: false
+    default: "#ffa500"
+  color-severity-low:
+    description: |
+      Color of the message when at least one finding has "Low" severity.
+    required: false
+    default: "#ffff00"
+  color-severity-none:
+    description: |
+      Color of the message when at least one finding has "None" severity.
+    required: false
+    default: "#808080"
+  color-severity-unknown:
+    description: |
+      Color of the message when at least one finding has "Unknown" severity.
+    required: false
+    default: "#800080"
+  color-level-error:
+    description: |
+      Color of the message when at least one finding has "Error" level.
+    required: false
+    default: "#ff00ff"
+  color-level-warning:
+    description: |
+      Color of the message when at least one finding has "Warning" level.
+    required: false
+    default: "#ffcc00"
+  color-level-note:
+    description: |
+      Color of the message when at least one finding has "Note" level.
+    required: false
+    default: "#00bfff"
+  color-level-none:
+    description: |
+      Color of the message when at least one finding has "None" level
+    required: false
+    default: "#808080"
+  color-level-unknown:
+    description: |
+      Color of the message when at least one finding has "Unknown" level
+    required: false
+    default: "#800080"
   sarif-path:
     description: |
       Path to the directory with SARIF files or to the SARIF file itself. Separate
       Slack messages will be sent for each SARIF file found in the directory.
     required: true
+  sarif-path-recursive:
+    description: |
+      If provided SARIF path is a directory, whether to traverse provided SARIF
+      path recursively or not.
+    required: false
+    default: "true"
+  sarif-file-extension:
+    description: |
+      Extension for SARIF files. Possible values: sarif, json.
+    required: false
+    default: "sarif"
   log-level:
     description: |
       Log level of output. Possible options are "silly", "trace", "debug", "info",
@@ -28,40 +111,10 @@ inputs:
       https://github.com/fullstack-build/tslog?tab=readme-ov-file#pretty-templates-and-styles-color-settings
     required: false
     default: "[{{logLevelName}}] [{{name}}] {{dateIsoStr}} "
-  calculate-by:
-    description: |
-      Specifies how the summary results in the Slack message are calculated from
-      the SARIF file(s) analysis. Possible values:
-      - "level": Calculates results by the "results[].level" property, or by the
-        "rules[].properties['problem.severity']" property if "results[].level"
-        property does not exist (such as error, warning, note).
-      - "severity": Calculates results by the "rules[].properties['security-severity']"
-        property that has CVSS score. Then this score is transformed into severity
-        value (such as critical, high, medium, low, none).
+  log-colored:
+    description: Whether logs should be colored or not.
     required: false
-    default: "severity"
-  group-by:
-    description: |
-      Controls how analysis results from the SARIF file are grouped and summarized
-      in the Slack message. Possible values:
-      - "tool-name": Groups results by tool name, combining and summarizing results
-        from all runs that use the same tool.
-      - "run": Groups results by each individual SARIF run, even if multiple runs
-        use the same tool.
-      - "total": No grouping; combines all results from all runs and provides a
-        single overall summary.
-    required: false
-    default: "tool-name"
-  color:
-    description: What color of the message should be in hex format.
-    required: false
-    default: "#ff0000"
-  username:
-    description: Slack message username.
-    required: false
-  icon-url:
-    description: Slack message icon.
-    required: false
+    default: "true"
   header:
     description: Slack message header.
     required: false
@@ -88,6 +141,26 @@ inputs:
     description: Whether to include run in the message.
     required: false
     default: "true"
+  representation:
+    description: |
+      Slack message representation. Possible values: compact-group-by-run-per-level,
+      compact-group-by-run-per-severity, compact-group-by-tool-name-per-level,
+      compact-group-by-tool-name-per-severity, compact-group-by-sarif-per-level,
+      compact-group-by-sarif-per-severity, compact-total-per-level,
+      compact-total-per-severity.
+    required: false
+    default: "compact-group-by-tool-name-per-severity"
+  send-if:
+    description: |
+      Condition on when Slack message should be sent. Possible values: severity-critical,
+      severity-high, severity-high-or-higher, severity-medium, severity-medium-or-higher,
+      severity-low, severity-low-or-higher, severity-none, severity-none-or-higher,
+      severity-unknown, severity-unknown-or-higher, level-error, level-warning,
+      level-warning-or-higher, level-note, level-note-or-higher, level-none,
+      level-none-or-higher, level-unknown, level-unknown-or-higher, always, some,
+      empty, never.
+    required: false
+    default: "always"
 runs:
   using: "node20"
   main: "dist/index.js"
