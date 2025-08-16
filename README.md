@@ -35,6 +35,9 @@ This GitHub action sends a notification to Slack based on the provided SARIF fil
     # (Optional) Default color of the Slack message if specific color was not found.
     # It is a fallback option. Defaults to "#ff0000".
     color: "#ff0000"
+    # (Optional) Color of the message when there are no findings in the provided
+    # SARIF file(s). Defaults to "#d3d3d3".
+    color-empty: "#d3d3d3"
     # (Optional) Color of the message when at least one finding has "Critical" severity.
     # Defaults to "#ff0000".
     color-severity-critical: "#ff0000"
@@ -53,9 +56,6 @@ This GitHub action sends a notification to Slack based on the provided SARIF fil
     # (Optional) Color of the message when at least one finding has "Unknown" severity.
     # Defaults to "#800080".
     color-severity-unknown: "#800080"
-    # (Optional) Color of the message when there are no findings in the provided
-    # SARIF file(s). Defaults to "#d3d3d3".
-    color-severity-empty: "#d3d3d3"
     # (Optional) Color of the message when at least one finding has "Error" level.
     # Defaults to "#ff00ff".
     color-level-error: "#ff00ff"
@@ -71,9 +71,6 @@ This GitHub action sends a notification to Slack based on the provided SARIF fil
     # (Optional) Color of the message when at least one finding has "Unknown" level.
     # Defaults to "#800080".
     color-level-unknown: "#800080"
-    # (Optional) Color of the message when there are no findings in the provided
-    # SARIF file(s). Defaults to "#d3d3d3".
-    color-level-empty: "#d3d3d3"
     # (Required) Path to the directory with SARIF files or to the SARIF file itself.
     # Separate Slack messages will be sent for each SARIF file found in the directory.
     sarif-path: "scanning-results.sarif"
