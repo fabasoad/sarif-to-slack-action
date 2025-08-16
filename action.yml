@@ -21,6 +21,11 @@ inputs:
       a fallback option.
     required: false
     default: "#ff0000"
+  color-empty:
+    description: |
+      Color of the message when there are no findings in the provided SARIF file(s).
+    required: false
+    default: "#d3d3d3"
   color-severity-critical:
     description: |
       Color of the message when at least one finding has "Critical" severity.
@@ -51,11 +56,6 @@ inputs:
       Color of the message when at least one finding has "Unknown" severity.
     required: false
     default: "#800080"
-  color-severity-empty:
-    description: |
-      Color of the message when there are no findings in the provided SARIF file(s).
-    required: false
-    default: "#d3d3d3"
   color-level-error:
     description: |
       Color of the message when at least one finding has "Error" level.
@@ -81,11 +81,6 @@ inputs:
       Color of the message when at least one finding has "Unknown" level
     required: false
     default: "#800080"
-  color-level-empty:
-    description: |
-      Color of the message when there are no findings in the provided SARIF file(s).
-    required: false
-    default: "#d3d3d3"
   sarif-path:
     description: |
       Path to the directory with SARIF files or to the SARIF file itself. Separate

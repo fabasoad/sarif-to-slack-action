@@ -14,13 +14,13 @@ export async function run() {
     iconUrl: getInput('icon-url', { required: false, trimWhitespace: true }),
     color: {
       default: new Color(getInput('color', { required: false, trimWhitespace: true })),
+      empty: new Color(getInput('color-empty', { required: false, trimWhitespace: true })),
       byLevel: {
         error: new Color(getInput('color-level-error', { required: false, trimWhitespace: true })),
         warning: new Color(getInput('color-level-warning', { required: false, trimWhitespace: true })),
         note: new Color(getInput('color-level-note', { required: false, trimWhitespace: true })),
         none: new Color(getInput('color-level-none', { required: false, trimWhitespace: true })),
         unknown: new Color(getInput('color-level-unknown', { required: false, trimWhitespace: true })),
-        empty: new Color(getInput('color-level-empty', { required: false, trimWhitespace: true })),
       },
       bySeverity: {
         critical: new Color(getInput('color-severity-critical', { required: false, trimWhitespace: true })),
@@ -29,7 +29,6 @@ export async function run() {
         low: new Color(getInput('color-severity-low', { required: false, trimWhitespace: true })),
         none: new Color(getInput('color-severity-none', { required: false, trimWhitespace: true })),
         unknown: new Color(getInput('color-severity-unknown', { required: false, trimWhitespace: true })),
-        empty: new Color(getInput('color-severity-empty', { required: false, trimWhitespace: true })),
       },
     },
     sarif: {
