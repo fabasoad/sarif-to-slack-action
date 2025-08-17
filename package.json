@@ -25,7 +25,7 @@
   "homepage": "https://github.com/fabasoad/sarif-to-slack-action#readme",
   "dependencies": {
     "@actions/core": "1.11.1",
-    "@fabasoad/sarif-to-slack": "1.2.1"
+    "@fabasoad/sarif-to-slack": "file:../sarif-to-slack"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.0",

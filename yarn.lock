@@ -546,14 +546,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@fabasoad/sarif-to-slack@npm:1.2.1":
+"@fabasoad/sarif-to-slack@file:../sarif-to-slack::locator=sarif-to-slack-action%40workspace%3A.":
   version: 1.2.1
-  resolution: "@fabasoad/sarif-to-slack@npm:1.2.1"
+  resolution: "@fabasoad/sarif-to-slack@file:../sarif-to-slack#../sarif-to-slack::hash=1a21dd&locator=sarif-to-slack-action%40workspace%3A."
   dependencies:
     "@slack/webhook": "npm:7.0.5"
     "@types/sarif": "npm:2.1.7"
     tslog: "npm:4.9.3"
-  checksum: 10c0/79e2fbd50e8203d63042f7511ed224460314920a38305cf96f00f4b9922c4dcbfc6bbfd7c497b93f7ba949fac9882ecd856d5301dda8c902920c07bca44680ea
+  checksum: 10c0/30df7f7c7d86f8b05cb25394d35df2ad71b9274132971f1936eb96c2a7b2f02378af5db87ce359e603688c6e469b48b5d090ef1c9ff3c78308ba166e8e67d0da
   languageName: node
   linkType: hard
 
@@ -3465,7 +3465,7 @@ __metadata:
   dependencies:
     "@actions/core": "npm:1.11.1"
     "@biomejs/biome": "npm:2.2.0"
-    "@fabasoad/sarif-to-slack": "npm:1.2.1"
+    "@fabasoad/sarif-to-slack": "file:../sarif-to-slack"
     "@types/jest": "npm:30.0.0"
     "@vercel/ncc": "npm:0.38.3"
     jest: "npm:30.0.5"
