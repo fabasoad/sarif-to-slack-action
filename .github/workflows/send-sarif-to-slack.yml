@@ -289,7 +289,7 @@ jobs:
 #          color-level-none: "#808080"
 #          color-level-unknown: "#800080"
           sarif-path: "test-data/sarif/${{ steps.sarif-file.outputs.value }}"
-          sarif-path-recursive: "true"
+          sarif-path-recursive: "false"
           sarif-file-extension: "sarif"
           log-level: "${{ inputs.log-level }}"
           log-template: "[{{logLevelName}}] [{{name}}] {{dateIsoStr}} "
