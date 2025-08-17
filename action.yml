@@ -20,67 +20,54 @@ inputs:
       Default color of the Slack message if specific color was not found. It is
       a fallback option.
     required: false
-    default: "#ff0000"
   color-empty:
     description: |
       Color of the message when there are no findings in the provided SARIF file(s).
     required: false
-    default: "#d3d3d3"
   color-severity-critical:
     description: |
       Color of the message when at least one finding has "Critical" severity.
     required: false
-    default: "#ff0000"
   color-severity-high:
     description: |
       Color of the message when at least one finding has "High" severity.
     required: false
-    default: "#ff4500"
   color-severity-medium:
     description: |
       Color of the message when at least one finding has "Medium" severity.
     required: false
-    default: "#ffa500"
   color-severity-low:
     description: |
       Color of the message when at least one finding has "Low" severity.
     required: false
-    default: "#ffff00"
   color-severity-none:
     description: |
       Color of the message when at least one finding has "None" severity.
     required: false
-    default: "#808080"
   color-severity-unknown:
     description: |
       Color of the message when at least one finding has "Unknown" severity.
     required: false
-    default: "#800080"
   color-level-error:
     description: |
       Color of the message when at least one finding has "Error" level.
     required: false
-    default: "#ff00ff"
   color-level-warning:
     description: |
       Color of the message when at least one finding has "Warning" level.
     required: false
-    default: "#ffcc00"
   color-level-note:
     description: |
       Color of the message when at least one finding has "Note" level.
     required: false
-    default: "#00bfff"
   color-level-none:
     description: |
       Color of the message when at least one finding has "None" level
     required: false
-    default: "#808080"
   color-level-unknown:
     description: |
       Color of the message when at least one finding has "Unknown" level
     required: false
-    default: "#800080"
   sarif-path:
     description: |
       Path to the directory with SARIF files or to the SARIF file itself. Separate
@@ -91,7 +78,7 @@ inputs:
       If provided SARIF path is a directory, whether to traverse provided SARIF
       path recursively or not.
     required: false
-    default: "true"
+    default: "false"
   sarif-file-extension:
     description: |
       Extension for SARIF files. Possible values: sarif, json.

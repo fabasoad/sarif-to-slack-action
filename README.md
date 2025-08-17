@@ -33,49 +33,49 @@ This GitHub action sends a notification to Slack based on the provided SARIF fil
     # Defaults to no icon.
     icon-url: "https://cdn-icons-png.flaticon.com/512/9070/9070006.png"
     # (Optional) Default color of the Slack message if specific color was not found.
-    # It is a fallback option. Defaults to "#ff0000".
+    # It is a fallback option. Defaults to no color.
     color: "#ff0000"
     # (Optional) Color of the message when there are no findings in the provided
-    # SARIF file(s). Defaults to "#d3d3d3".
+    # SARIF file(s). Defaults to no color.
     color-empty: "#d3d3d3"
     # (Optional) Color of the message when at least one finding has "Critical" severity.
-    # Defaults to "#ff0000".
+    # Defaults to no color.
     color-severity-critical: "#ff0000"
     # (Optional) Color of the message when at least one finding has "High" severity.
-    # Defaults to "#ff4500".
+    # Defaults to no color.
     color-severity-high: "#ff4500"
     # (Optional) Color of the message when at least one finding has "Medium" severity.
-    # Defaults to "#ffa500".
+    # Defaults to no color.
     color-severity-medium: "#ffa500"
     # (Optional) Color of the message when at least one finding has "Low" severity.
-    # Defaults to "#ffff00".
+    # Defaults to no color.
     color-severity-low: "#ffff00"
     # (Optional) Color of the message when at least one finding has "None" severity.
-    # Defaults to "#808080".
+    # Defaults to no color.
     color-severity-none: "#808080"
     # (Optional) Color of the message when at least one finding has "Unknown" severity.
-    # Defaults to "#800080".
+    # Defaults to no color.
     color-severity-unknown: "#800080"
     # (Optional) Color of the message when at least one finding has "Error" level.
-    # Defaults to "#ff00ff".
+    # Defaults to no color.
     color-level-error: "#ff00ff"
     # (Optional) Color of the message when at least one finding has "Warning" level.
-    # Defaults to "#ffcc00".
+    # Defaults to no color.
     color-level-warning: "#ffcc00"
     # (Optional) Color of the message when at least one finding has "Note" level.
-    # Defaults to "#00bfff".
+    # Defaults to no color.
     color-level-note: "#00bfff"
     # (Optional) Color of the message when at least one finding has "None" level.
-    # Defaults to "#808080".
+    # Defaults to no color.
     color-level-none: "#808080"
     # (Optional) Color of the message when at least one finding has "Unknown" level.
-    # Defaults to "#800080".
+    # Defaults to no color.
     color-level-unknown: "#800080"
     # (Required) Path to the directory with SARIF files or to the SARIF file itself.
     # Separate Slack messages will be sent for each SARIF file found in the directory.
     sarif-path: "scanning-results.sarif"
     # (Optional) If provided SARIF path is a directory, whether to traverse provided
-    # SARIF path recursively or not. Defaults to "true".
+    # SARIF path recursively or not. Defaults to "false".
     sarif-path-recursive: "true"
     # (Optional) Extension for SARIF files. Possible values: sarif, json. Defaults
     # to "sarif".
