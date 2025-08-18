@@ -35607,9 +35607,9 @@ var require_dist2 = __commonJS({
       /**
        * Creates an instance of {@link Color} class. Before creating an instance of
        * {@link Color} class, it (if applicable) maps CI status into the hex color,
-       * and also validates {@param color} to be a valid string that represents a
+       * and also validates color parameter to be a valid string that represents a
        * color in hex format.
-       * @param color Can be either undefined, valid color in hex format or GitHub
+       * @param color - Can be either undefined, valid color in hex format or GitHub
        * CI status (one of: success, failure, cancelled, skipped)
        * @public
        */
@@ -35624,7 +35624,7 @@ var require_dist2 = __commonJS({
         return this._color;
       }
       assertHexColor() {
-        if (this._color != null) {
+        if (this._color) {
           const hexColorRegex = /^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
           if (!hexColorRegex.test(this._color)) {
             throw new Error(`Invalid hex color: "${this._color}"`);
@@ -35814,8 +35814,8 @@ var require_dist2 = __commonJS({
     }
     var import_webhook = require_dist();
     var version = "1.2.1";
-    var sha = "a95136ddcc0efb84500e9df4cf3a03a91c65e9b4";
-    var buildAt = "2025-08-17T15:12:44Z";
+    var sha = "1c73c6e7c67a4b772762ed0d6c4610d0cccc8fd4";
+    var buildAt = "2025-08-18T15:18:10Z";
     function createSlackMessage(url, opts) {
       return new SlackMessageImpl(url, opts);
     }
@@ -36433,11 +36433,10 @@ ${summary}`;
       /**
        * The main function to initialize a list of {@link SlackMessage} objects based
        * on the given SARIF file(s).
-       * @param sarifModel An instance of {@link SarifModel} object.
-       * @param opts An instance of {@link SarifToSlackClientOptions} object.
+       * @param sarifModel - An instance of SarifModel object.
+       * @param opts - An instance of {@link SarifToSlackClientOptions} object.
        * @returns A map where key is the SARIF file and value is an instance of
-       * {@link SlackMessage} object
-       * @private
+       * {@link SlackMessage} object.
        */
       static async initialize(sarifModel, opts) {
         const message = createSlackMessage(opts.webhookUrl, {

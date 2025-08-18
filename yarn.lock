@@ -730,12 +730,12 @@ __metadata:
 
 "@fabasoad/sarif-to-slack@file:../sarif-to-slack::locator=sarif-to-slack-action%40workspace%3A.":
   version: 1.2.1
-  resolution: "@fabasoad/sarif-to-slack@file:../sarif-to-slack#../sarif-to-slack::hash=4c2eda&locator=sarif-to-slack-action%40workspace%3A."
+  resolution: "@fabasoad/sarif-to-slack@file:../sarif-to-slack#../sarif-to-slack::hash=b2ba4a&locator=sarif-to-slack-action%40workspace%3A."
   dependencies:
     "@slack/webhook": "npm:7.0.5"
     "@types/sarif": "npm:2.1.7"
     tslog: "npm:4.9.3"
-  checksum: 10c0/14b95a308aaea4ab198dccf889946490c994c89784eb086b576a3b106ac6b8c26b0b46023351f549db89dd72be534efcbde743d919eac45507c9c5c2073264fe
+  checksum: 10c0/03b4ff197349de1535e21e29fba65b601fbf8da4c488fcc9b314ecd7f4d751f35629b03c312cc3bb232f646d8339644309c9cd29a4c95261bddd56053d49ded4
   languageName: node
   linkType: hard
 
