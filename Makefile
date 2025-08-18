@@ -6,7 +6,7 @@ audit:
 
 .PHONY: build
 build:
-	@yarn run build
+	@yarn run build:esbuild
 
 .PHONY: clean
 clean:
