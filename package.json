@@ -4,7 +4,6 @@
   "description": "This GitHub action sends notification to Slack based on SARIF file.",
   "main": "dist/index.js",
   "scripts": {
-    "build-old": "ncc build -m src/index.ts",
     "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js",
     "lint": "biome lint --write src",
     "test": "jest --config=jest.config.json --json --outputFile=jest-report.json --coverage --testNamePattern=unit",
@@ -32,7 +31,6 @@
   "devDependencies": {
     "@biomejs/biome": "2.2.0",
     "@types/jest": "30.0.0",
-    "@vercel/ncc": "0.38.3",
     "esbuild": "0.25.9",
     "jest": "30.0.5",
     "jest-circus": "30.0.5",
