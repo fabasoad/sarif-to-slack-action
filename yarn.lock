@@ -548,12 +548,12 @@ __metadata:
 
 "@fabasoad/sarif-to-slack@file:../sarif-to-slack::locator=sarif-to-slack-action%40workspace%3A.":
   version: 1.2.1
-  resolution: "@fabasoad/sarif-to-slack@file:../sarif-to-slack#../sarif-to-slack::hash=1a21dd&locator=sarif-to-slack-action%40workspace%3A."
+  resolution: "@fabasoad/sarif-to-slack@file:../sarif-to-slack#../sarif-to-slack::hash=ec093d&locator=sarif-to-slack-action%40workspace%3A."
   dependencies:
     "@slack/webhook": "npm:7.0.5"
     "@types/sarif": "npm:2.1.7"
     tslog: "npm:4.9.3"
-  checksum: 10c0/30df7f7c7d86f8b05cb25394d35df2ad71b9274132971f1936eb96c2a7b2f02378af5db87ce359e603688c6e469b48b5d090ef1c9ff3c78308ba166e8e67d0da
+  checksum: 10c0/dea1b8e0b95b274474ee0f43a40246a07e050087f4214e6f042a5e546244b94eafa8148104d4eb4e6019aae39b7c535bd9b096467300a99836171057fae04811
   languageName: node
   linkType: hard
 
@@ -1305,9 +1305,9 @@ __metadata:
   linkType: hard
 
 "ansi-regex@npm:^6.0.1":
-  version: 6.1.0
-  resolution: "ansi-regex@npm:6.1.0"
-  checksum: 10c0/a91daeddd54746338478eef88af3439a7edf30f8e23196e2d6ed182da9add559c601266dbef01c2efa46a958ad6f1f8b176799657616c702b5b02e799e7fd8dc
+  version: 6.2.0
+  resolution: "ansi-regex@npm:6.2.0"
+  checksum: 10c0/20a2e55ae9816074a60e6729dbe3daad664cd967fc82acc08b02f5677db84baa688babf940d71f50acbbb184c02459453789705e079f4d521166ae66451de551
   languageName: node
   linkType: hard
 
@@ -2378,12 +2378,12 @@ __metadata:
   linkType: hard
 
 "istanbul-reports@npm:^3.1.3":
-  version: 3.1.7
-  resolution: "istanbul-reports@npm:3.1.7"
+  version: 3.2.0
+  resolution: "istanbul-reports@npm:3.2.0"
   dependencies:
     html-escaper: "npm:^2.0.0"
     istanbul-lib-report: "npm:^3.0.0"
-  checksum: 10c0/a379fadf9cf8dc5dfe25568115721d4a7eb82fbd50b005a6672aff9c6989b20cc9312d7865814e0859cd8df58cbf664482e1d3604be0afde1f7fc3ccc1394a51
+  checksum: 10c0/d596317cfd9c22e1394f22a8d8ba0303d2074fe2e971887b32d870e4b33f8464b10f8ccbe6847808f7db485f084eba09e6c2ed706b3a978e4b52f07085b8f9bc
   languageName: node
   linkType: hard
 
@@ -3471,7 +3471,7 @@ __metadata:
     jest: "npm:30.0.5"
     jest-circus: "npm:30.0.5"
     ts-jest: "npm:29.4.1"
-    typescript: "npm:5.9.2"
+    typescript: "npm:5.8.3"
   languageName: unknown
   linkType: soft
 
@@ -3831,23 +3831,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:5.9.2":
-  version: 5.9.2
-  resolution: "typescript@npm:5.9.2"
+"typescript@npm:5.8.3":
+  version: 5.8.3
+  resolution: "typescript@npm:5.8.3"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: 10c0/cd635d50f02d6cf98ed42de2f76289701c1ec587a363369255f01ed15aaf22be0813226bff3c53e99d971f9b540e0b3cc7583dbe05faded49b1b0bed2f638a18
+  checksum: 10c0/5f8bb01196e542e64d44db3d16ee0e4063ce4f3e3966df6005f2588e86d91c03e1fb131c2581baf0fb65ee79669eea6e161cd448178986587e9f6844446dbb48
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@npm%3A5.9.2#optional!builtin<compat/typescript>":
-  version: 5.9.2
-  resolution: "typescript@patch:typescript@npm%3A5.9.2#optional!builtin<compat/typescript>::version=5.9.2&hash=5786d5"
+"typescript@patch:typescript@npm%3A5.8.3#optional!builtin<compat/typescript>":
+  version: 5.8.3
+  resolution: "typescript@patch:typescript@npm%3A5.8.3#optional!builtin<compat/typescript>::version=5.8.3&hash=5786d5"
   bin:
     tsc: bin/tsc
     tsserver: bin/tsserver
-  checksum: 10c0/34d2a8e23eb8e0d1875072064d5e1d9c102e0bdce56a10a25c0b917b8aa9001a9cf5c225df12497e99da107dc379360bc138163c66b55b95f5b105b50578067e
+  checksum: 10c0/39117e346ff8ebd87ae1510b3a77d5d92dae5a89bde588c747d25da5c146603a99c8ee588c7ef80faaf123d89ed46f6dbd918d534d641083177d5fac38b8a1cb
   languageName: node
   linkType: hard
 
