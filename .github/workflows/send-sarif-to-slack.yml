@@ -168,7 +168,7 @@ jobs:
         env:
           INPUT_SARIF: "${{ inputs.sarif }}"
         run: |
-          if [ "${INPUT_SARIF}" = "CodeQL C# (High: 1)1)" ]; then
+          if [ "${INPUT_SARIF}" = "CodeQL C# (High: 1)" ]; then
             value="codeql-csharp.sarif"
           elif [ "${INPUT_SARIF}" = "CodeQL Go (Critical: 1)" ]; then
             value="codeql-go.sarif"

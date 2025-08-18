@@ -6,11 +6,12 @@ import {
 import {
   processLogLevel,
   processRepresentationType,
-  processSarifExtension, processSendIf,
-} from '../Processors'
+  processSarifExtension,
+  processSendIf,
+} from '../processors'
 import { InvalidEnumParameterError } from '../errors'
 
-describe('processLogLevel', (): void => {
+describe('(unit): processLogLevel', (): void => {
   test.each([
     [LogLevel.Silly, 'silly'],
     [LogLevel.Trace, 'trace'],
@@ -34,7 +35,7 @@ describe('processLogLevel', (): void => {
   })
 })
 
-describe('processSarifExtension', (): void => {
+describe('(unit): processSarifExtension', (): void => {
   test.each(['sarif', 'json'])('passes for "%s"', (ext: string): void => {
     expect(processSarifExtension(ext)).toBe(ext)
   })
@@ -50,7 +51,7 @@ describe('processSarifExtension', (): void => {
   })
 })
 
-describe('processRepresentationType', (): void => {
+describe('(unit): processRepresentationType', (): void => {
   test.each([
     [RepresentationType.CompactGroupByRunPerLevel, 'compact-group-by-run-per-level'],
     [RepresentationType.CompactGroupByRunPerSeverity, 'compact-group-by-run-per-severity'],
@@ -83,7 +84,7 @@ describe('processRepresentationType', (): void => {
   })
 })
 
-describe('processSendIf', (): void => {
+describe('(unit): processSendIf', (): void => {
   test.each([
     [SendIf.SeverityCritical, 'severity-critical'],
     [SendIf.SeverityHigh, 'severity-high'],
