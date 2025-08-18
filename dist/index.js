@@ -35813,9 +35813,9 @@ var require_dist2 = __commonJS({
       }
     }
     var import_webhook = require_dist();
-    var version = "1.2.1";
-    var sha = "1c73c6e7c67a4b772762ed0d6c4610d0cccc8fd4";
-    var buildAt = "2025-08-18T15:18:10Z";
+    var version = "1.2.2";
+    var sha = "9b1eb78a551a7afd49036e4721c93ff9a6c18a9b";
+    var buildAt = "2025-08-18T15:22:58Z";
     function createSlackMessage(url, opts) {
       return new SlackMessageImpl(url, opts);
     }

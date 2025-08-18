@@ -4,8 +4,8 @@
   "description": "This GitHub action sends notification to Slack based on SARIF file.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "ncc build -m src/index.ts",
-    "build:esbuild": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js",
+    "build-old": "ncc build -m src/index.ts",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js",
     "lint": "biome lint --write src",
     "test": "jest --config=jest.config.json --json --outputFile=jest-report.json --coverage --testNamePattern=unit",
     "test:integration": "jest --config=jest.config.json --testNamePattern=integration"
@@ -27,7 +27,7 @@
   "homepage": "https://github.com/fabasoad/sarif-to-slack-action#readme",
   "dependencies": {
     "@actions/core": "1.11.1",
-    "@fabasoad/sarif-to-slack": "file:../sarif-to-slack"
+    "@fabasoad/sarif-to-slack": "1.2.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.0",
