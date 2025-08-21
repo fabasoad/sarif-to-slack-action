@@ -1,6 +1,6 @@
 {
   "name": "sarif-to-slack-action",
-  "version": "2.0.0",
+  "version": "2.0.2",
   "description": "This GitHub action sends notification to Slack based on SARIF file.",
   "main": "dist/index.js",
   "scripts": {
@@ -26,7 +26,7 @@
   "homepage": "https://github.com/fabasoad/sarif-to-slack-action#readme",
   "dependencies": {
     "@actions/core": "1.11.1",
-    "@fabasoad/sarif-to-slack": "1.2.2"
+    "@fabasoad/sarif-to-slack": "1.2.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.0",

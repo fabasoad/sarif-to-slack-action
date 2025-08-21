@@ -35813,9 +35813,9 @@ var require_dist2 = __commonJS({
       }
     }
     var import_webhook = require_dist();
-    var version = "1.2.2";
-    var sha = "9b1eb78a551a7afd49036e4721c93ff9a6c18a9b";
-    var buildAt = "2025-08-18T15:22:58Z";
+    var version = "1.2.3";
+    var sha = "ec8d9a860e38996de3cbf56f2e6103aa1229e85b";
+    var buildAt = "2025-08-21T04:21:37Z";
     function createSlackMessage(url, opts) {
       return new SlackMessageImpl(url, opts);
     }
@@ -36030,12 +36030,17 @@ ${summary}`;
         }).join("\n\n");
       }
       composeCompactReport(findings, key) {
-        return Object.entries(Object.groupBy(findings, (f) => f[key])).map(([prop, findings2]) => {
-          if (findings2 == null) {
-            return void 0;
+        const result = [];
+        findings.reduce((grouped, f) => {
+          if (!grouped.get(f[key])) {
+            grouped.set(f[key], new Array());
           }
-          return `${this.bold(this.extractEnumValue(key, prop))}: ${findings2.length}`;
-        }).filter((v) => v != null).join(", ");
+          grouped.get(f[key])?.push(f);
+          return grouped;
+        }, /* @__PURE__ */ new Map()).forEach((v, k) => {
+          result.push(`${this.bold(this.extractEnumValue(key, k))}: ${v.length}`);
+        });
+        return result.join(", ");
       }
       extractEnumValue(key, prop) {
         switch (key) {
