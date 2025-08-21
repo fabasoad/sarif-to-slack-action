@@ -7,35 +7,52 @@ jest.mock('@actions/core', () => ({
   getBooleanInput: mockGetBooleanInput,
 }))
 
-jest.mock('@fabasoad/sarif-to-slack', () => ({
-  ...jest.requireActual('@fabasoad/sarif-to-slack'),
-  Color: jest.fn().mockImplementation((color: string) => ({
-    value: color,
-  })),
-}))
-
 import { InputOptions } from '@actions/core'
 import {
-  LogLevel, RepresentationType,
+  Color,
+  LogLevel,
+  RepresentationType,
   SarifToSlackClient,
-  SarifToSlackClientOptions, SendIf
+  SarifToSlackClientOptions,
+  SendIf
 } from '@fabasoad/sarif-to-slack'
 import run from '../run'
 
 describe('(unit): run', (): void => {
+  const expectedPropsMap = new Map<string, string>([
+    ['sarif-file-extension', 'sarif'],
+    ['log-level', 'warning'],
+    ['representation', 'compact-group-by-tool-name-per-severity'],
+    ['send-if', 'severity-high-or-higher']
+  ])
+
+  beforeAll((): void => {
+    [
+      'color',
+      'color-empty',
+      'color-level-error',
+      'color-level-warning',
+      'color-level-note',
+      'color-level-none',
+      'color-level-unknown',
+      'color-severity-critical',
+      'color-severity-high',
+      'color-severity-medium',
+      'color-severity-low',
+      'color-severity-none',
+      'color-severity-unknown',
+    ].forEach((prop: string): void => {
+      expectedPropsMap.set(prop, `#${Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0')}`)
+    })
+  })
+
   beforeEach((): void => {
     mockGetInput.mockImplementation(
       (name: string, opts?: InputOptions): string => {
-        const map = new Map<string, string>([
-          ['sarif-file-extension', 'sarif'],
-          ['log-level', 'warning'],
-          ['representation', 'compact-group-by-tool-name-per-severity'],
-          ['send-if', 'severity-high-or-higher']
-        ])
         expect(opts).not.toBeFalsy()
         expect(opts?.required).toBe(['slack-webhook', 'sarif-path'].includes(name))
         expect(opts?.trimWhitespace).toBe(name !== 'log-template')
-        return map.get(name) ?? `${name}-test`
+        return expectedPropsMap.get(name) ?? `${name}-test`
       }
     );
     mockGetBooleanInput.mockImplementation(
@@ -64,25 +81,30 @@ describe('(unit): run', (): void => {
 
   test('should send Sarif to Slack', async (): Promise<void> => {
     const mockSend: jest.Mock<Promise<void>, []> = jest.fn()
+    const mockFrom: jest.SpyInstance<Color | undefined, [string | undefined]> = jest
+      .spyOn(Color, 'from')
+      .mockImplementation((color: string | undefined): Color | undefined => ({
+        color
+      } as Color))
     const mockCreate: jest.SpyInstance<Promise<SarifToSlackClient>, [SarifToSlackClientOptions]> = jest
       .spyOn(SarifToSlackClient, 'create')
       .mockImplementation((opts: SarifToSlackClientOptions): Promise<SarifToSlackClient> => {
         expect(opts.webhookUrl).toBe('slack-webhook-test')
         expect(opts.username).toBe('username-test')
         expect(opts.iconUrl).toBe('icon-url-test')
-        expect(opts.color?.default?.value).toBe('color-test')
-        expect(opts.color?.empty?.value).toBe('color-empty-test')
-        expect(opts.color?.byLevel?.error?.value).toBe('color-level-error-test')
-        expect(opts.color?.byLevel?.warning?.value).toBe('color-level-warning-test')
-        expect(opts.color?.byLevel?.note?.value).toBe('color-level-note-test')
-        expect(opts.color?.byLevel?.none?.value).toBe('color-level-none-test')
-        expect(opts.color?.byLevel?.unknown?.value).toBe('color-level-unknown-test')
-        expect(opts.color?.bySeverity?.critical?.value).toBe('color-severity-critical-test')
-        expect(opts.color?.bySeverity?.high?.value).toBe('color-severity-high-test')
-        expect(opts.color?.bySeverity?.medium?.value).toBe('color-severity-medium-test')
-        expect(opts.color?.bySeverity?.low?.value).toBe('color-severity-low-test')
-        expect(opts.color?.bySeverity?.none?.value).toBe('color-severity-none-test')
-        expect(opts.color?.bySeverity?.unknown?.value).toBe('color-severity-unknown-test')
+        expect(opts.color?.default?.color).toBe(expectedPropsMap.get('color'))
+        expect(opts.color?.empty?.color).toBe(expectedPropsMap.get('color-empty'))
+        expect(opts.color?.byLevel?.error?.color).toBe(expectedPropsMap.get('color-level-error'))
+        expect(opts.color?.byLevel?.warning?.color).toBe(expectedPropsMap.get('color-level-warning'))
+        expect(opts.color?.byLevel?.note?.color).toBe(expectedPropsMap.get('color-level-note'))
+        expect(opts.color?.byLevel?.none?.color).toBe(expectedPropsMap.get('color-level-none'))
+        expect(opts.color?.byLevel?.unknown?.color).toBe(expectedPropsMap.get('color-level-unknown'))
+        expect(opts.color?.bySeverity?.critical?.color).toBe(expectedPropsMap.get('color-severity-critical'))
+        expect(opts.color?.bySeverity?.high?.color).toBe(expectedPropsMap.get('color-severity-high'))
+        expect(opts.color?.bySeverity?.medium?.color).toBe(expectedPropsMap.get('color-severity-medium'))
+        expect(opts.color?.bySeverity?.low?.color).toBe(expectedPropsMap.get('color-severity-low'))
+        expect(opts.color?.bySeverity?.none?.color).toBe(expectedPropsMap.get('color-severity-none'))
+        expect(opts.color?.bySeverity?.unknown?.color).toBe(expectedPropsMap.get('color-severity-unknown'))
         expect(opts.sarif.path).toBe('sarif-path-test')
         expect(opts.sarif.recursive).toBe(true)
         expect(opts.sarif.extension).toBe('sarif')
@@ -103,6 +125,7 @@ describe('(unit): run', (): void => {
         } as unknown as SarifToSlackClient)
       })
     await run()
+    expect(mockFrom).toHaveBeenCalledTimes(13)
     expect(mockCreate).toHaveBeenCalledTimes(1)
     expect(mockSend).toHaveBeenCalledTimes(1)
   })

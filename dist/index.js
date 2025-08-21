@@ -35559,178 +35559,47 @@ var require_dist2 = __commonJS({
       SendIf: () => SendIf2
     });
     module2.exports = __toCommonJS(index_exports);
-    var LogLevel2 = /* @__PURE__ */ ((LogLevel22) => {
-      LogLevel22[LogLevel22["Silly"] = 0] = "Silly";
-      LogLevel22[LogLevel22["Trace"] = 1] = "Trace";
-      LogLevel22[LogLevel22["Debug"] = 2] = "Debug";
-      LogLevel22[LogLevel22["Info"] = 3] = "Info";
-      LogLevel22[LogLevel22["Warning"] = 4] = "Warning";
-      LogLevel22[LogLevel22["Error"] = 5] = "Error";
-      LogLevel22[LogLevel22["Fatal"] = 6] = "Fatal";
-      return LogLevel22;
-    })(LogLevel2 || {});
-    var FooterType = /* @__PURE__ */ ((FooterType2) => {
-      FooterType2["PlainText"] = "plain_text";
-      FooterType2["Markdown"] = "mrkdwn";
-      return FooterType2;
-    })(FooterType || {});
-    var RepresentationType2 = /* @__PURE__ */ ((RepresentationType22) => {
-      RepresentationType22[RepresentationType22["CompactGroupByRunPerLevel"] = 0] = "CompactGroupByRunPerLevel";
-      RepresentationType22[RepresentationType22["CompactGroupByRunPerSeverity"] = 1] = "CompactGroupByRunPerSeverity";
-      RepresentationType22[RepresentationType22["CompactGroupByToolNamePerLevel"] = 2] = "CompactGroupByToolNamePerLevel";
-      RepresentationType22[RepresentationType22["CompactGroupByToolNamePerSeverity"] = 3] = "CompactGroupByToolNamePerSeverity";
-      RepresentationType22[RepresentationType22["CompactGroupBySarifPerLevel"] = 4] = "CompactGroupBySarifPerLevel";
-      RepresentationType22[RepresentationType22["CompactGroupBySarifPerSeverity"] = 5] = "CompactGroupBySarifPerSeverity";
-      RepresentationType22[RepresentationType22["CompactTotalPerLevel"] = 6] = "CompactTotalPerLevel";
-      RepresentationType22[RepresentationType22["CompactTotalPerSeverity"] = 7] = "CompactTotalPerSeverity";
-      return RepresentationType22;
-    })(RepresentationType2 || {});
-    var SecuritySeverity = /* @__PURE__ */ ((SecuritySeverity2) => {
-      SecuritySeverity2[SecuritySeverity2["Unknown"] = 0] = "Unknown";
-      SecuritySeverity2[SecuritySeverity2["None"] = 1] = "None";
-      SecuritySeverity2[SecuritySeverity2["Low"] = 2] = "Low";
-      SecuritySeverity2[SecuritySeverity2["Medium"] = 3] = "Medium";
-      SecuritySeverity2[SecuritySeverity2["High"] = 4] = "High";
-      SecuritySeverity2[SecuritySeverity2["Critical"] = 5] = "Critical";
-      return SecuritySeverity2;
-    })(SecuritySeverity || {});
-    var SecurityLevel = /* @__PURE__ */ ((SecurityLevel2) => {
-      SecurityLevel2[SecurityLevel2["Unknown"] = 0] = "Unknown";
-      SecurityLevel2[SecurityLevel2["None"] = 1] = "None";
-      SecurityLevel2[SecurityLevel2["Note"] = 2] = "Note";
-      SecurityLevel2[SecurityLevel2["Warning"] = 3] = "Warning";
-      SecurityLevel2[SecurityLevel2["Error"] = 4] = "Error";
-      return SecurityLevel2;
-    })(SecurityLevel || {});
-    var Color2 = class {
-      _color;
+    var Color2 = class _Color {
+      /**
+       * A valid string that represents a color in hex format.
+       * @public
+       */
+      color;
+      constructor(color) {
+        this.color = this.mapColor(color);
+        this.assertHexColor();
+      }
       /**
        * Creates an instance of {@link Color} class. Before creating an instance of
        * {@link Color} class, it (if applicable) maps CI status into the hex color,
        * and also validates color parameter to be a valid string that represents a
        * color in hex format.
        * @param color - Can be either undefined, valid color in hex format or GitHub
-       * CI status (one of: success, failure, cancelled, skipped)
+       * CI status (one of: success, failure, cancelled, skipped).
+       * @returns An instance of {@link Color} or undefined if color parameter is falsy.
        * @public
        */
-      constructor(color) {
-        this._color = this.mapColor(color);
-        this.assertHexColor();
-      }
-      /**
-       * Returns a valid string that represents a color in hex format, or undefined.
-       */
-      get value() {
-        return this._color;
+      static from(color) {
+        return color ? new _Color(color) : void 0;
       }
       assertHexColor() {
-        if (this._color) {
+        if (this.color) {
           const hexColorRegex = /^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/;
-          if (!hexColorRegex.test(this._color)) {
-            throw new Error(`Invalid hex color: "${this._color}"`);
+          if (!hexColorRegex.test(this.color)) {
+            throw new Error(`Invalid hex color: "${this.color}"`);
           }
         }
       }
       mapColor(from) {
-        switch (from) {
-          case "success":
-            return "#008000";
-          case "failure":
-            return "#ff0000";
-          case "cancelled":
-            return "#0047ab";
-          case "skipped":
-            return "#808080";
-          default:
-            return from;
-        }
+        const map = /* @__PURE__ */ new Map([
+          ["success", "#008000"],
+          ["failure", "#ff0000"],
+          ["cancelled", "#0047ab"],
+          ["skipped", "#808080"]
+        ]);
+        return map.get(from) ?? from;
       }
     };
-    function identifyColorCommon(findings, prop, none, unknown, color) {
-      if (color.none != null && findings.findByProperty(prop, none) != null) {
-        return color.none.value;
-      }
-      if (color.unknown != null && findings.findByProperty(prop, unknown) != null) {
-        return color.unknown.value;
-      }
-      return void 0;
-    }
-    function identifyColorBySeverity(findings, color) {
-      if (color.critical != null && findings.findByProperty(
-        "severity",
-        5
-        /* Critical */
-      ) != null) {
-        return color.critical.value;
-      }
-      if (color.high != null && findings.findByProperty(
-        "severity",
-        4
-        /* High */
-      ) != null) {
-        return color.high.value;
-      }
-      if (color.medium != null && findings.findByProperty(
-        "severity",
-        3
-        /* Medium */
-      ) != null) {
-        return color.medium.value;
-      }
-      if (color.low != null && findings.findByProperty(
-        "severity",
-        2
-        /* Low */
-      ) != null) {
-        return color.low.value;
-      }
-      return identifyColorCommon(findings, "severity", 1, 0, color);
-    }
-    function identifyColorByLevel(findings, color) {
-      if (color.error != null && findings.findByProperty(
-        "level",
-        4
-        /* Error */
-      ) != null) {
-        return color.error.value;
-      }
-      if (color.warning != null && findings.findByProperty(
-        "level",
-        3
-        /* Warning */
-      ) != null) {
-        return color.warning.value;
-      }
-      if (color.note != null && findings.findByProperty(
-        "level",
-        2
-        /* Note */
-      ) != null) {
-        return color.note.value;
-      }
-      return identifyColorCommon(findings, "level", 1, 0, color);
-    }
-    function identifyColor(findings, colorOpts) {
-      if (!colorOpts) {
-        return void 0;
-      }
-      if (colorOpts.bySeverity) {
-        const color = identifyColorBySeverity(findings, colorOpts.bySeverity);
-        if (color !== void 0) {
-          return color;
-        }
-      }
-      if (colorOpts.byLevel) {
-        const color = identifyColorByLevel(findings, colorOpts.byLevel);
-        if (color !== void 0) {
-          return color;
-        }
-      }
-      if (findings.length === 0 && colorOpts.empty?.value !== void 0) {
-        return colorOpts.empty.value;
-      }
-      return colorOpts?.default?.value;
-    }
     var SendIf2 = /* @__PURE__ */ ((SendIf22) => {
       SendIf22[SendIf22["SeverityCritical"] = 0] = "SeverityCritical";
       SendIf22[SendIf22["SeverityHigh"] = 1] = "SeverityHigh";
@@ -35813,9 +35682,52 @@ var require_dist2 = __commonJS({
       }
     }
     var import_webhook = require_dist();
-    var version = "1.2.3";
-    var sha = "ec8d9a860e38996de3cbf56f2e6103aa1229e85b";
-    var buildAt = "2025-08-21T04:21:37Z";
+    var LogLevel2 = /* @__PURE__ */ ((LogLevel22) => {
+      LogLevel22[LogLevel22["Silly"] = 0] = "Silly";
+      LogLevel22[LogLevel22["Trace"] = 1] = "Trace";
+      LogLevel22[LogLevel22["Debug"] = 2] = "Debug";
+      LogLevel22[LogLevel22["Info"] = 3] = "Info";
+      LogLevel22[LogLevel22["Warning"] = 4] = "Warning";
+      LogLevel22[LogLevel22["Error"] = 5] = "Error";
+      LogLevel22[LogLevel22["Fatal"] = 6] = "Fatal";
+      return LogLevel22;
+    })(LogLevel2 || {});
+    var FooterType = /* @__PURE__ */ ((FooterType2) => {
+      FooterType2["PlainText"] = "plain_text";
+      FooterType2["Markdown"] = "mrkdwn";
+      return FooterType2;
+    })(FooterType || {});
+    var RepresentationType2 = /* @__PURE__ */ ((RepresentationType22) => {
+      RepresentationType22[RepresentationType22["CompactGroupByRunPerLevel"] = 0] = "CompactGroupByRunPerLevel";
+      RepresentationType22[RepresentationType22["CompactGroupByRunPerSeverity"] = 1] = "CompactGroupByRunPerSeverity";
+      RepresentationType22[RepresentationType22["CompactGroupByToolNamePerLevel"] = 2] = "CompactGroupByToolNamePerLevel";
+      RepresentationType22[RepresentationType22["CompactGroupByToolNamePerSeverity"] = 3] = "CompactGroupByToolNamePerSeverity";
+      RepresentationType22[RepresentationType22["CompactGroupBySarifPerLevel"] = 4] = "CompactGroupBySarifPerLevel";
+      RepresentationType22[RepresentationType22["CompactGroupBySarifPerSeverity"] = 5] = "CompactGroupBySarifPerSeverity";
+      RepresentationType22[RepresentationType22["CompactTotalPerLevel"] = 6] = "CompactTotalPerLevel";
+      RepresentationType22[RepresentationType22["CompactTotalPerSeverity"] = 7] = "CompactTotalPerSeverity";
+      return RepresentationType22;
+    })(RepresentationType2 || {});
+    var SecuritySeverity = /* @__PURE__ */ ((SecuritySeverity2) => {
+      SecuritySeverity2[SecuritySeverity2["Unknown"] = 0] = "Unknown";
+      SecuritySeverity2[SecuritySeverity2["None"] = 1] = "None";
+      SecuritySeverity2[SecuritySeverity2["Low"] = 2] = "Low";
+      SecuritySeverity2[SecuritySeverity2["Medium"] = 3] = "Medium";
+      SecuritySeverity2[SecuritySeverity2["High"] = 4] = "High";
+      SecuritySeverity2[SecuritySeverity2["Critical"] = 5] = "Critical";
+      return SecuritySeverity2;
+    })(SecuritySeverity || {});
+    var SecurityLevel = /* @__PURE__ */ ((SecurityLevel2) => {
+      SecurityLevel2[SecurityLevel2["Unknown"] = 0] = "Unknown";
+      SecurityLevel2[SecurityLevel2["None"] = 1] = "None";
+      SecurityLevel2[SecurityLevel2["Note"] = 2] = "Note";
+      SecurityLevel2[SecurityLevel2["Warning"] = 3] = "Warning";
+      SecurityLevel2[SecurityLevel2["Error"] = 4] = "Error";
+      return SecurityLevel2;
+    })(SecurityLevel || {});
+    var version = "1.3.0";
+    var sha = "5c2d7ac234dc99d16b3d8ec9c05475ce26a6a573";
+    var buildAt = "2025-08-21T13:21:58Z";
     function createSlackMessage(url, opts) {
       return new SlackMessageImpl(url, opts);
     }
@@ -36383,6 +36295,186 @@ ${summary}`;
         return 1;
       }
     };
+    function logColorTaken(color, prop) {
+      Logger.debug(`Message has ${color?.color} color taken from '${prop}' property.`);
+    }
+    function logPropDefinedButNoFindings(key, val) {
+      const prop = key === "level" ? "byLevel" : "bySeverity";
+      Logger.trace(`'${prop}.${val}' property is defined but no findings with "${val}" ${key} is found. Continue color identification...`);
+    }
+    function logPropIsNotDefined(key, val) {
+      const prop = key === "level" ? "byLevel" : "bySeverity";
+      Logger.trace(`'${prop}.${val}' property is not defined. Continue color identification...`);
+    }
+    function identifyColorCommon(findings, prop, none, unknown, color) {
+      if (color.none) {
+        if (findings.findByProperty(prop, none) != null) {
+          logColorTaken(color.none, `${prop === "severity" ? "bySeverity" : "byLevel"}.none`);
+          return color.none.color;
+        } else {
+          logPropDefinedButNoFindings(prop, "none");
+        }
+      } else {
+        logPropIsNotDefined(prop, "none");
+      }
+      if (color.unknown) {
+        if (findings.findByProperty(prop, unknown) != null) {
+          logColorTaken(color.unknown, `${prop === "severity" ? "bySeverity" : "byLevel"}.unknown`);
+          return color.unknown.color;
+        } else {
+          logPropDefinedButNoFindings(prop, "unknown");
+        }
+      } else {
+        logPropIsNotDefined(prop, "unknown");
+      }
+      return void 0;
+    }
+    function identifyColorBySeverity(findings, color) {
+      if (color.critical) {
+        if (findings.findByProperty(
+          "severity",
+          5
+          /* Critical */
+        ) != null) {
+          logColorTaken(color.critical, "bySeverity.critical");
+          return color.critical.color;
+        } else {
+          logPropDefinedButNoFindings("severity", "critical");
+        }
+      } else {
+        logPropIsNotDefined("severity", "critical");
+      }
+      if (color.high) {
+        if (findings.findByProperty(
+          "severity",
+          4
+          /* High */
+        ) != null) {
+          logColorTaken(color.high, "bySeverity.high");
+          return color.high.color;
+        } else {
+          logPropDefinedButNoFindings("severity", "high");
+        }
+      } else {
+        logPropIsNotDefined("severity", "high");
+      }
+      if (color.medium) {
+        if (findings.findByProperty(
+          "severity",
+          3
+          /* Medium */
+        ) != null) {
+          logColorTaken(color.medium, "bySeverity.medium");
+          return color.medium.color;
+        } else {
+          logPropDefinedButNoFindings("severity", "medium");
+        }
+      } else {
+        logPropIsNotDefined("severity", "medium");
+      }
+      if (color.low) {
+        if (findings.findByProperty(
+          "severity",
+          2
+          /* Low */
+        ) != null) {
+          logColorTaken(color.low, "bySeverity.low");
+          return color.low.color;
+        } else {
+          logPropDefinedButNoFindings("severity", "low");
+        }
+      } else {
+        logPropIsNotDefined("severity", "low");
+      }
+      return identifyColorCommon(findings, "severity", 1, 0, color);
+    }
+    function identifyColorByLevel(findings, color) {
+      if (color.error) {
+        if (findings.findByProperty(
+          "level",
+          4
+          /* Error */
+        ) != null) {
+          logColorTaken(color.error, "byLevel.error");
+          return color.error.color;
+        } else {
+          logPropDefinedButNoFindings("level", "error");
+        }
+      } else {
+        logPropIsNotDefined("level", "error");
+      }
+      if (color.warning) {
+        if (findings.findByProperty(
+          "level",
+          3
+          /* Warning */
+        ) != null) {
+          logColorTaken(color.warning, "byLevel.warning");
+          return color.warning.color;
+        } else {
+          logPropDefinedButNoFindings("level", "warning");
+        }
+      } else {
+        logPropIsNotDefined("level", "warning");
+      }
+      if (color.note != null) {
+        if (findings.findByProperty(
+          "level",
+          2
+          /* Note */
+        ) != null) {
+          logColorTaken(color.note, "byLevel.note");
+          return color.note.color;
+        } else {
+          logPropDefinedButNoFindings("level", "note");
+        }
+      } else {
+        logPropIsNotDefined("level", "note");
+      }
+      return identifyColorCommon(findings, "level", 1, 0, color);
+    }
+    function identifyColor(findings, colorOpts) {
+      if (!colorOpts) {
+        Logger.debug("Message has no color as color options are not defined.");
+        return void 0;
+      }
+      Logger.trace(`Identifying color for ${findings.length} findings and the following color options:`, JSON.stringify(colorOpts, null, 2));
+      if (colorOpts.bySeverity) {
+        const color = identifyColorBySeverity(findings, colorOpts.bySeverity);
+        if (color) {
+          return color;
+        }
+        Logger.trace("None of the properties in 'bySeverity' group is applicable. Continue color identification...");
+      } else {
+        Logger.trace("'bySeverity' group is not defined. Continue color identification...");
+      }
+      if (colorOpts.byLevel) {
+        const color = identifyColorByLevel(findings, colorOpts.byLevel);
+        if (color) {
+          return color;
+        }
+        Logger.trace("None of the properties in 'byLevel' group is applicable. Continue color identification...");
+      } else {
+        Logger.trace("'byLevel' group is not defined. Continue color identification...");
+      }
+      if (findings.length === 0) {
+        Logger.trace('There are no findings in the provided SARIF file(s). Checking if color is defined in "empty" property...');
+        if (colorOpts.empty?.color) {
+          logColorTaken(colorOpts.empty, "empty");
+          return colorOpts.empty.color;
+        } else {
+          Logger.trace('"empty" color is not defined. Continue color identification...');
+        }
+      } else {
+        Logger.trace(`"empty" color is not taken into account because there are ${findings.length} findings in the provided SARIF file(s). Continue color identification...`);
+      }
+      if (colorOpts.default?.color) {
+        logColorTaken(colorOpts.default, "default");
+      } else {
+        Logger.debug("Message has no color as none of the defined color options is applicable.");
+      }
+      return colorOpts?.default?.color;
+    }
     var SarifToSlackClient2 = class _SarifToSlackClient {
       _message;
       _sarifModel;
@@ -36717,22 +36809,22 @@ async function run() {
     username: (0, import_core.getInput)("username", { required: false, trimWhitespace: true }),
     iconUrl: (0, import_core.getInput)("icon-url", { required: false, trimWhitespace: true }),
     color: {
-      default: new import_sarif_to_slack2.Color((0, import_core.getInput)("color", { required: false, trimWhitespace: true })),
-      empty: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-empty", { required: false, trimWhitespace: true })),
+      default: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color", { required: false, trimWhitespace: true })),
+      empty: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-empty", { required: false, trimWhitespace: true })),
       byLevel: {
-        error: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-level-error", { required: false, trimWhitespace: true })),
-        warning: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-level-warning", { required: false, trimWhitespace: true })),
-        note: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-level-note", { required: false, trimWhitespace: true })),
-        none: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-level-none", { required: false, trimWhitespace: true })),
-        unknown: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-level-unknown", { required: false, trimWhitespace: true }))
+        error: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-error", { required: false, trimWhitespace: true })),
+        warning: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-warning", { required: false, trimWhitespace: true })),
+        note: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-note", { required: false, trimWhitespace: true })),
+        none: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-none", { required: false, trimWhitespace: true })),
+        unknown: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-unknown", { required: false, trimWhitespace: true }))
       },
       bySeverity: {
-        critical: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-severity-critical", { required: false, trimWhitespace: true })),
-        high: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-severity-high", { required: false, trimWhitespace: true })),
-        medium: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-severity-medium", { required: false, trimWhitespace: true })),
-        low: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-severity-low", { required: false, trimWhitespace: true })),
-        none: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-severity-none", { required: false, trimWhitespace: true })),
-        unknown: new import_sarif_to_slack2.Color((0, import_core.getInput)("color-severity-unknown", { required: false, trimWhitespace: true }))
+        critical: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-critical", { required: false, trimWhitespace: true })),
+        high: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-high", { required: false, trimWhitespace: true })),
+        medium: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-medium", { required: false, trimWhitespace: true })),
+        low: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-low", { required: false, trimWhitespace: true })),
+        none: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-none", { required: false, trimWhitespace: true })),
+        unknown: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-unknown", { required: false, trimWhitespace: true }))
       }
     },
     sarif: {
