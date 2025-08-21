@@ -728,14 +728,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@fabasoad/sarif-to-slack@npm:1.2.3":
-  version: 1.2.3
-  resolution: "@fabasoad/sarif-to-slack@npm:1.2.3"
+"@fabasoad/sarif-to-slack@npm:1.3.0":
+  version: 1.3.0
+  resolution: "@fabasoad/sarif-to-slack@npm:1.3.0"
   dependencies:
     "@slack/webhook": "npm:7.0.5"
     "@types/sarif": "npm:2.1.7"
     tslog: "npm:4.9.3"
-  checksum: 10c0/6f3328cc3469c5296a6490ff49a4036012c3dc9dd5f67f4cff9e93b81450ea5a18a2d541321d88ba3bba5a36019e5288dc35d5f6bea7a228e8bdab27a1e87850
+  checksum: 10c0/ed939dbd5bf47a20061476830d2992a5b2aadd6a6c12b9af0b2f160d2ddb8f8700d8a190f3686bd088a4046b4d125ff5c732deb85d9fdf92d65ed4d5051b052e
   languageName: node
   linkType: hard
 
@@ -1746,9 +1746,9 @@ __metadata:
   linkType: hard
 
 "caniuse-lite@npm:^1.0.30001735":
-  version: 1.0.30001735
-  resolution: "caniuse-lite@npm:1.0.30001735"
-  checksum: 10c0/1cb74221f16f8835c903770c1cf88fb73a07298b8398396a2b97570136e8f691053ee5840eb589fe34b4ede14ab828c9421d893a67e43c26ef91ab052813cb8c
+  version: 1.0.30001736
+  resolution: "caniuse-lite@npm:1.0.30001736"
+  checksum: 10c0/6375c37fcde3dcb2ec26f329abcd7b7171ed1fdac5ed87cfbd028a0bf2b92d3ca89ec5e6b1274c84055a1c996e4f5deb37f899ce1ff860579e8adf1eef681b31
   languageName: node
   linkType: hard
 
@@ -3725,7 +3725,7 @@ __metadata:
   dependencies:
     "@actions/core": "npm:1.11.1"
     "@biomejs/biome": "npm:2.2.0"
-    "@fabasoad/sarif-to-slack": "npm:1.2.3"
+    "@fabasoad/sarif-to-slack": "npm:1.3.0"
     "@types/jest": "npm:30.0.0"
     esbuild: "npm:0.25.9"
     jest: "npm:30.0.5"
