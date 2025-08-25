@@ -19808,6 +19808,37 @@ Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
   }
 });
 
+// node_modules/@slack/webhook/dist/errors.js
+var require_errors2 = __commonJS({
+  "node_modules/@slack/webhook/dist/errors.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.ErrorCode = void 0;
+    exports2.requestErrorWithOriginal = requestErrorWithOriginal;
+    exports2.httpErrorWithOriginal = httpErrorWithOriginal;
+    var ErrorCode;
+    (function(ErrorCode2) {
+      ErrorCode2["RequestError"] = "slack_webhook_request_error";
+      ErrorCode2["HTTPError"] = "slack_webhook_http_error";
+    })(ErrorCode || (exports2.ErrorCode = ErrorCode = {}));
+    function errorWithCode(error, code) {
+      const codedError = error;
+      codedError.code = code;
+      return codedError;
+    }
+    function requestErrorWithOriginal(original) {
+      const error = errorWithCode(new Error(`A request error occurred: ${original.message}`), ErrorCode.RequestError);
+      error.original = original;
+      return error;
+    }
+    function httpErrorWithOriginal(original) {
+      const error = errorWithCode(new Error(`An HTTP protocol error occurred: statusCode = ${original.response.status}`), ErrorCode.HTTPError);
+      error.original = original;
+      return error;
+    }
+  }
+});
+
 // node_modules/delayed-stream/lib/delayed_stream.js
 var require_delayed_stream = __commonJS({
   "node_modules/delayed-stream/lib/delayed_stream.js"(exports2, module2) {
@@ -34629,50 +34660,28 @@ var require_axios = __commonJS({
   }
 });
 
-// node_modules/@slack/webhook/dist/errors.js
-var require_errors2 = __commonJS({
-  "node_modules/@slack/webhook/dist/errors.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.httpErrorWithOriginal = exports2.requestErrorWithOriginal = exports2.ErrorCode = void 0;
-    var ErrorCode;
-    (function(ErrorCode2) {
-      ErrorCode2["RequestError"] = "slack_webhook_request_error";
-      ErrorCode2["HTTPError"] = "slack_webhook_http_error";
-    })(ErrorCode = exports2.ErrorCode || (exports2.ErrorCode = {}));
-    function errorWithCode(error, code) {
-      const codedError = error;
-      codedError.code = code;
-      return codedError;
-    }
-    function requestErrorWithOriginal(original) {
-      const error = errorWithCode(new Error(`A request error occurred: ${original.message}`), ErrorCode.RequestError);
-      error.original = original;
-      return error;
-    }
-    exports2.requestErrorWithOriginal = requestErrorWithOriginal;
-    function httpErrorWithOriginal(original) {
-      const error = errorWithCode(new Error(`An HTTP protocol error occurred: statusCode = ${original.response.status}`), ErrorCode.HTTPError);
-      error.original = original;
-      return error;
-    }
-    exports2.httpErrorWithOriginal = httpErrorWithOriginal;
-  }
-});
-
 // node_modules/@slack/webhook/package.json
 var require_package = __commonJS({
   "node_modules/@slack/webhook/package.json"(exports2, module2) {
     module2.exports = {
       name: "@slack/webhook",
-      version: "7.0.5",
+      version: "7.0.6",
       description: "Official library for using the Slack Platform's Incoming Webhooks",
       author: "Slack Technologies, LLC",
       license: "MIT",
-      keywords: ["slack", "request", "client", "http", "api", "proxy"],
+      keywords: [
+        "slack",
+        "request",
+        "client",
+        "http",
+        "api",
+        "proxy"
+      ],
       main: "dist/index.js",
       types: "./dist/index.d.ts",
-      files: ["dist/**/*"],
+      files: [
+        "dist/**/*"
+      ],
       engines: {
         node: ">= 18",
         npm: ">= 8.6.0"
@@ -34689,29 +34698,34 @@ var require_package = __commonJS({
         prepare: "npm run build",
         build: "npm run build:clean && tsc",
         "build:clean": "shx rm -rf ./dist ./coverage",
+        docs: "npx typedoc --plugin typedoc-plugin-markdown",
         lint: "npx @biomejs/biome check .",
         "lint:fix": "npx @biomejs/biome check --write .",
-        mocha: "mocha --config .mocharc.json src/*.spec.ts",
+        mocha: "mocha --config ./test/.mocharc.json src/*.spec.ts",
         test: "npm run lint && npm run test:unit",
-        "test:unit": "npm run build && c8 npm run mocha"
+        "test:unit": "npm run build && c8 --config ./test/.c8rc.json npm run mocha"
       },
       dependencies: {
         "@slack/types": "^2.9.0",
         "@types/node": ">=18.0.0",
-        axios: "^1.8.3"
+        axios: "^1.11.0"
       },
       devDependencies: {
-        "@biomejs/biome": "^1.8.3",
+        "@biomejs/biome": "^2.0.5",
         "@types/chai": "^4.3.5",
         "@types/mocha": "^10.0.1",
-        c8: "^9.1.0",
+        c8: "^10.1.3",
         chai: "^4.3.8",
-        mocha: "^10.2.0",
-        nock: "^13.3.3",
-        shx: "^0.3.2",
+        mocha: "^11.7.1",
+        "mocha-junit-reporter": "^2.2.1",
+        "mocha-multi-reporters": "^1.5.1",
+        nock: "^14.0.6",
+        shx: "^0.4.0",
         "source-map-support": "^0.5.21",
-        "ts-node": "^8.2.0",
-        typescript: "^4.1.0"
+        "ts-node": "^10.9.2",
+        typedoc: "^0.28.7",
+        "typedoc-plugin-markdown": "^4.7.1",
+        typescript: "^5.8.3"
       }
     };
   }
@@ -34739,17 +34753,28 @@ var require_instrument = __commonJS({
     }) : function(o, v) {
       o["default"] = v;
     });
-    var __importStar = exports2 && exports2.__importStar || function(mod) {
-      if (mod && mod.__esModule) return mod;
-      var result = {};
-      if (mod != null) {
-        for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-      }
-      __setModuleDefault(result, mod);
-      return result;
-    };
+    var __importStar = exports2 && exports2.__importStar || /* @__PURE__ */ (function() {
+      var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function(o2) {
+          var ar = [];
+          for (var k in o2) if (Object.prototype.hasOwnProperty.call(o2, k)) ar[ar.length] = k;
+          return ar;
+        };
+        return ownKeys(o);
+      };
+      return function(mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) {
+          for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        }
+        __setModuleDefault(result, mod);
+        return result;
+      };
+    })();
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.getUserAgent = exports2.addAppMetadata = void 0;
+    exports2.addAppMetadata = addAppMetadata;
+    exports2.getUserAgent = getUserAgent;
     var os = __importStar(require("node:os"));
     var packageJson = require_package();
     function replaceSlashes(s) {
@@ -34760,12 +34785,10 @@ var require_instrument = __commonJS({
     function addAppMetadata({ name, version }) {
       appMetadata[replaceSlashes(name)] = version;
     }
-    exports2.addAppMetadata = addAppMetadata;
     function getUserAgent() {
       const appIdentifier = Object.entries(appMetadata).map(([name, version]) => `${name}/${version}`).join(" ");
       return (appIdentifier.length > 0 ? `${appIdentifier} ` : "") + baseUserAgent;
     }
-    exports2.getUserAgent = getUserAgent;
   }
 });
 
@@ -34845,14 +34868,14 @@ var require_dist = __commonJS({
   "node_modules/@slack/webhook/dist/index.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.ErrorCode = exports2.IncomingWebhook = void 0;
-    var IncomingWebhook_1 = require_IncomingWebhook();
-    Object.defineProperty(exports2, "IncomingWebhook", { enumerable: true, get: function() {
-      return IncomingWebhook_1.IncomingWebhook;
-    } });
+    exports2.IncomingWebhook = exports2.ErrorCode = void 0;
     var errors_1 = require_errors2();
     Object.defineProperty(exports2, "ErrorCode", { enumerable: true, get: function() {
       return errors_1.ErrorCode;
+    } });
+    var IncomingWebhook_1 = require_IncomingWebhook();
+    Object.defineProperty(exports2, "IncomingWebhook", { enumerable: true, get: function() {
+      return IncomingWebhook_1.IncomingWebhook;
     } });
   }
 });
@@ -35725,9 +35748,9 @@ var require_dist2 = __commonJS({
       SecurityLevel2[SecurityLevel2["Error"] = 4] = "Error";
       return SecurityLevel2;
     })(SecurityLevel || {});
-    var version = "1.3.0";
-    var sha = "5c2d7ac234dc99d16b3d8ec9c05475ce26a6a573";
-    var buildAt = "2025-08-21T13:21:58Z";
+    var version = "1.3.1";
+    var sha = "fac0524704ae1c62880212a04af4e48ac31297ed";
+    var buildAt = "2025-08-25T09:16:54Z";
     function createSlackMessage(url, opts) {
       return new SlackMessageImpl(url, opts);
     }
@@ -35852,16 +35875,18 @@ var require_dist2 = __commonJS({
     };
     var import_fs = __toESM2(require("fs"));
     var path = __toESM2(require("path"));
-    function listFilesRecursively(dir, extension, fileList = []) {
-      const entries = import_fs.default.readdirSync(dir);
-      entries.forEach((entry) => {
-        const fullPath = path.join(dir, entry);
-        if (import_fs.default.statSync(fullPath).isDirectory()) {
-          listFilesRecursively(fullPath, extension, fileList);
-        } else if (path.extname(fullPath).toLowerCase() === `.${extension}`) {
-          fileList.push(fullPath);
-        }
-      });
+    function listFiles(dir, recursive, extension, fileList = []) {
+      if (import_fs.default.statSync(dir).isDirectory()) {
+        const entries = import_fs.default.readdirSync(dir);
+        entries.forEach((entry) => {
+          const fullPath = path.join(dir, entry);
+          if (recursive && import_fs.default.statSync(fullPath).isDirectory()) {
+            listFiles(fullPath, recursive, extension, fileList);
+          } else if (path.extname(fullPath).toLowerCase() === `.${extension}`) {
+            fileList.push(fullPath);
+          }
+        });
+      }
       return fileList;
     }
     function extractListOfFiles(opts) {
@@ -35871,7 +35896,7 @@ var require_dist2 = __commonJS({
       const stats = import_fs.default.statSync(opts.path);
       if (stats.isDirectory()) {
         Logger.info(`Provided path is a directory: ${opts.path}`);
-        const files = opts.recursive && listFilesRecursively(opts.path, opts.extension ?? "sarif") || import_fs.default.readdirSync(opts.path);
+        const files = listFiles(opts.path, !!opts.recursive, opts.extension ?? "sarif");
         Logger.info(`Found ${files.length} files in ${opts.path} directory with ${opts.extension} extension`);
         Logger.debug(`Found files: ${files.join(", ")}`);
         return files;
