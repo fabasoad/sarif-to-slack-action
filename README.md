@@ -5,7 +5,7 @@
 ![unit-tests](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/unit-tests.yml/badge.svg)
 ![security](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/security.yml/badge.svg)
 ![linting](https://github.com/fabasoad/sarif-to-slack-action/actions/workflows/linting.yml/badge.svg)
-[![codecov](https://codecov.io/gh/fabasoad/sarif-to-slack-action/branch/main/graph/badge.svg?token=908QOYME6H)](https://codecov.io/gh/fabasoad/sarif-to-slack-action)
+[![codecov](https://codecov.io/gh/fabasoad/sarif-to-slack-action/graph/badge.svg?token=908QOYME6H)](https://codecov.io/gh/fabasoad/sarif-to-slack-action)
 
 This GitHub action sends a notification to Slack based on the provided SARIF file.
 
