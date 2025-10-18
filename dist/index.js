@@ -45973,6 +45973,45 @@ var require_get_proto = __commonJS({
   }
 });
 
+// node_modules/async-function/index.js
+var require_async_function = __commonJS({
+  "node_modules/async-function/index.js"(exports2, module2) {
+    "use strict";
+    var cached = (
+      /** @type {import('.').AsyncFunctionConstructor} */
+      async function() {
+      }.constructor
+    );
+    module2.exports = () => cached;
+  }
+});
+
+// node_modules/generator-function/index.js
+var require_generator_function = __commonJS({
+  "node_modules/generator-function/index.js"(exports2, module2) {
+    "use strict";
+    var cached = (
+      /** @type {GeneratorFunctionConstructor} */
+      function* () {
+      }.constructor
+    );
+    module2.exports = () => cached;
+  }
+});
+
+// node_modules/async-generator-function/index.js
+var require_async_generator_function = __commonJS({
+  "node_modules/async-generator-function/index.js"(exports2, module2) {
+    "use strict";
+    var cached = (
+      /** @type {import('.').AsyncGeneratorFunctionConstructor} */
+      async function* () {
+      }.constructor
+    );
+    module2.exports = () => cached;
+  }
+});
+
 // node_modules/hasown/index.js
 var require_hasown = __commonJS({
   "node_modules/hasown/index.js"(exports2, module2) {
@@ -46004,13 +46043,6 @@ var require_get_intrinsic = __commonJS({
     var pow = require_pow();
     var round = require_round();
     var sign = require_sign();
-    var $Function = Function;
-    var getEvalledConstructor = function(expressionSyntax) {
-      try {
-        return $Function('"use strict"; return (' + expressionSyntax + ").constructor;")();
-      } catch (e) {
-      }
-    };
     var $gOPD = require_gopd();
     var $defineProperty = require_es_define_property();
     var throwTypeError = function() {
@@ -46066,7 +46098,7 @@ var require_get_intrinsic = __commonJS({
       "%Float32Array%": typeof Float32Array === "undefined" ? undefined2 : Float32Array,
       "%Float64Array%": typeof Float64Array === "undefined" ? undefined2 : Float64Array,
       "%FinalizationRegistry%": typeof FinalizationRegistry === "undefined" ? undefined2 : FinalizationRegistry,
-      "%Function%": $Function,
+      "%Function%": Function,
       "%GeneratorFunction%": needsEval,
       "%Int8Array%": typeof Int8Array === "undefined" ? undefined2 : Int8Array,
       "%Int16Array%": typeof Int16Array === "undefined" ? undefined2 : Int16Array,
@@ -46129,14 +46161,17 @@ var require_get_intrinsic = __commonJS({
       }
     }
     var errorProto;
+    var getAsyncFunction = require_async_function();
+    var getGeneratorFunction = require_generator_function();
+    var getAsyncGeneratorFunction = require_async_generator_function();
     var doEval = function doEval2(name) {
       var value;
       if (name === "%AsyncFunction%") {
-        value = getEvalledConstructor("async function () {}");
+        value = getAsyncFunction() || void undefined2;
       } else if (name === "%GeneratorFunction%") {
-        value = getEvalledConstructor("function* () {}");
+        value = getGeneratorFunction() || void undefined2;
       } else if (name === "%AsyncGeneratorFunction%") {
-        value = getEvalledConstructor("async function* () {}");
+        value = getAsyncGeneratorFunction() || void undefined2;
       } else if (name === "%AsyncGenerator%") {
         var fn = doEval2("%AsyncGeneratorFunction%");
         if (fn) {
@@ -53128,22 +53163,6 @@ var InvalidEnumParameterError = class extends InvalidParameterError {
 };
 
 // src/processors.ts
-function processLogLevel(logLevel) {
-  const allowed = /* @__PURE__ */ new Map([
-    ["silly", import_sarif_to_slack.LogLevel.Silly],
-    ["trace", import_sarif_to_slack.LogLevel.Trace],
-    ["debug", import_sarif_to_slack.LogLevel.Debug],
-    ["info", import_sarif_to_slack.LogLevel.Info],
-    ["warning", import_sarif_to_slack.LogLevel.Warning],
-    ["error", import_sarif_to_slack.LogLevel.Error],
-    ["fatal", import_sarif_to_slack.LogLevel.Fatal]
-  ]);
-  const result = allowed.get(logLevel.toLowerCase());
-  if (result == null) {
-    throw new InvalidEnumParameterError("log-level", Array.from(allowed.keys()));
-  }
-  return result;
-}
 function processSarifExtension(extension) {
   const allowed = ["sarif", "json"];
   if (allowed.includes(extension)) {
@@ -53202,59 +53221,83 @@ function processSendIf(sendIf) {
   return result;
 }
 
+// src/validate.ts
+function assertOneOf(parameterName, value, allowedValues) {
+  if (!allowedValues.includes(value)) {
+    throw new Error(
+      `Invalid value "${value}" for parameter "${parameterName}". Allowed values are: ${allowedValues.join(", ")}.`
+    );
+  }
+}
+function assertLogLevel(value) {
+  assertOneOf("log-level", value, [
+    "silly",
+    "trace",
+    "debug",
+    "info",
+    "warning",
+    "error",
+    "fatal"
+  ]);
+}
+
 // src/run.ts
 async function run() {
-  const client = await import_sarif_to_slack2.SarifToSlackClient.create({
-    webhookUrl: (0, import_core.getInput)("slack-webhook", { required: true, trimWhitespace: true }),
-    username: (0, import_core.getInput)("username", { required: false, trimWhitespace: true }),
-    iconUrl: (0, import_core.getInput)("icon-url", { required: false, trimWhitespace: true }),
-    color: {
-      default: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color", { required: false, trimWhitespace: true })),
-      empty: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-empty", { required: false, trimWhitespace: true })),
-      byLevel: {
-        error: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-error", { required: false, trimWhitespace: true })),
-        warning: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-warning", { required: false, trimWhitespace: true })),
-        note: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-note", { required: false, trimWhitespace: true })),
-        none: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-none", { required: false, trimWhitespace: true })),
-        unknown: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-unknown", { required: false, trimWhitespace: true }))
+  const logLevel = (0, import_core.getInput)("log-level", { required: false, trimWhitespace: true });
+  const logColored = (0, import_core.getInput)("log-colored", { required: false, trimWhitespace: true });
+  assertLogLevel(logLevel);
+  assertOneOf("log-colored", logColored, ["true", "false"]);
+  process.env.SARIF_TO_SLACK_LOG_LEVEL = logLevel;
+  process.env.SARIF_TO_SLACK_LOG_TEMPLATE = (0, import_core.getInput)("log-template", { required: false, trimWhitespace: false });
+  process.env.SARIF_TO_SLACK_LOG_COLORED = logColored;
+  const client = await import_sarif_to_slack2.SarifToSlackClient.create(
+    (0, import_core.getInput)("slack-webhook", { required: true, trimWhitespace: true }),
+    {
+      username: (0, import_core.getInput)("username", { required: false, trimWhitespace: true }),
+      iconUrl: (0, import_core.getInput)("icon-url", { required: false, trimWhitespace: true }),
+      color: {
+        default: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color", { required: false, trimWhitespace: true })),
+        empty: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-empty", { required: false, trimWhitespace: true })),
+        byLevel: {
+          error: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-error", { required: false, trimWhitespace: true })),
+          warning: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-warning", { required: false, trimWhitespace: true })),
+          note: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-note", { required: false, trimWhitespace: true })),
+          none: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-none", { required: false, trimWhitespace: true })),
+          unknown: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-level-unknown", { required: false, trimWhitespace: true }))
+        },
+        bySeverity: {
+          critical: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-critical", { required: false, trimWhitespace: true })),
+          high: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-high", { required: false, trimWhitespace: true })),
+          medium: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-medium", { required: false, trimWhitespace: true })),
+          low: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-low", { required: false, trimWhitespace: true })),
+          none: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-none", { required: false, trimWhitespace: true })),
+          unknown: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-unknown", { required: false, trimWhitespace: true }))
+        }
       },
-      bySeverity: {
-        critical: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-critical", { required: false, trimWhitespace: true })),
-        high: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-high", { required: false, trimWhitespace: true })),
-        medium: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-medium", { required: false, trimWhitespace: true })),
-        low: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-low", { required: false, trimWhitespace: true })),
-        none: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-none", { required: false, trimWhitespace: true })),
-        unknown: import_sarif_to_slack2.Color.from((0, import_core.getInput)("color-severity-unknown", { required: false, trimWhitespace: true }))
-      }
-    },
-    sarif: {
-      path: (0, import_core.getInput)("sarif-path", { required: true, trimWhitespace: true }),
-      recursive: (0, import_core.getBooleanInput)("sarif-path-recursive", { required: false, trimWhitespace: true }),
-      extension: processSarifExtension((0, import_core.getInput)("sarif-file-extension", { required: false, trimWhitespace: true }))
-    },
-    log: {
-      level: processLogLevel((0, import_core.getInput)("log-level", { required: false, trimWhitespace: true })),
-      template: (0, import_core.getInput)("log-template", { required: false, trimWhitespace: false }),
-      colored: (0, import_core.getBooleanInput)("log-colored", { required: false, trimWhitespace: true })
-    },
-    header: {
-      include: (0, import_core.getBooleanInput)("include-header", { required: false, trimWhitespace: true }),
-      value: (0, import_core.getInput)("header", { required: false, trimWhitespace: true })
-    },
-    footer: {
-      include: (0, import_core.getBooleanInput)("include-footer", { required: false, trimWhitespace: true }),
-      value: (0, import_core.getInput)("footer", { required: false, trimWhitespace: true })
-    },
-    actor: {
-      include: (0, import_core.getBooleanInput)("include-actor", { required: false, trimWhitespace: true }),
-      value: (0, import_core.getInput)("actor", { required: false, trimWhitespace: true })
-    },
-    run: {
-      include: (0, import_core.getBooleanInput)("include-run", { required: false, trimWhitespace: true })
-    },
-    representation: processRepresentationType((0, import_core.getInput)("representation", { required: false, trimWhitespace: true })),
-    sendIf: processSendIf((0, import_core.getInput)("send-if", { required: false, trimWhitespace: true }))
-  });
+      sarif: {
+        path: (0, import_core.getInput)("sarif-path", { required: true, trimWhitespace: true }),
+        recursive: (0, import_core.getBooleanInput)("sarif-path-recursive", { required: false, trimWhitespace: true }),
+        extension: processSarifExtension((0, import_core.getInput)("sarif-file-extension", { required: false, trimWhitespace: true }))
+      },
+      header: {
+        include: (0, import_core.getBooleanInput)("include-header", { required: false, trimWhitespace: true }),
+        value: (0, import_core.getInput)("header", { required: false, trimWhitespace: true })
+      },
+      footer: {
+        include: (0, import_core.getBooleanInput)("include-footer", { required: false, trimWhitespace: true }),
+        value: (0, import_core.getInput)("footer", { required: false, trimWhitespace: true })
+      },
+      actor: {
+        include: (0, import_core.getBooleanInput)("include-actor", { required: false, trimWhitespace: true }),
+        value: (0, import_core.getInput)("actor", { required: false, trimWhitespace: true })
+      },
+      run: {
+        include: (0, import_core.getBooleanInput)("include-run", { required: false, trimWhitespace: true })
+      },
+      representation: processRepresentationType((0, import_core.getInput)("representation", { required: false, trimWhitespace: true })),
+      sendIf: processSendIf((0, import_core.getInput)("send-if", { required: false, trimWhitespace: true }))
+    }
+  );
   await client.send();
 }
 

@@ -1,39 +1,13 @@
 import {
-  LogLevel,
   RepresentationType,
   SarifFileExtension, SendIf
 } from '@fabasoad/sarif-to-slack'
 import {
-  processLogLevel,
   processRepresentationType,
   processSarifExtension,
   processSendIf,
 } from '../processors'
 import { InvalidEnumParameterError } from '../errors'
-
-describe('(unit): processLogLevel', (): void => {
-  test.each([
-    [LogLevel.Silly, 'silly'],
-    [LogLevel.Trace, 'trace'],
-    [LogLevel.Debug, 'debug'],
-    [LogLevel.Info, 'info'],
-    [LogLevel.Warning, 'warning'],
-    [LogLevel.Error, 'error'],
-    [LogLevel.Fatal, 'fatal'],
-  ])('returns %s for "%s"', (expected: LogLevel, logLevel: string): void => {
-    expect(processLogLevel(logLevel)).toBe(expected)
-  })
-
-  test('is case-insensitive', (): void => {
-    expect(processLogLevel('ERROR')).toBe(LogLevel.Error)
-    expect(processLogLevel('Info')).toBe(LogLevel.Info)
-    expect(processLogLevel('DeBuG')).toBe(LogLevel.Debug)
-  })
-
-  test('throws for unknown log level', (): void => {
-    expect((): LogLevel => processLogLevel('unknown')).toThrow(InvalidEnumParameterError)
-  })
-})
 
 describe('(unit): processSarifExtension', (): void => {
   test.each(['sarif', 'json'])('passes for "%s"', (ext: string): void => {
