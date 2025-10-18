@@ -1,36 +1,9 @@
 import {
-  LogLevel,
   RepresentationType,
   SarifFileExtension,
   SendIf
 } from '@fabasoad/sarif-to-slack'
 import { InvalidEnumParameterError } from './errors'
-
-/**
- * Processes a log level string or number and converts it to a numeric log level.
- * @param logLevel
- * @returns The numeric log level corresponding to the input string or number,
- * or undefined if logLevel param is undefined.
- * @throws Error If the input string does not match any known log level.
- * @internal
- */
-export function processLogLevel(logLevel: string): LogLevel {
-  const allowed = new Map<string, LogLevel>([
-    ['silly', LogLevel.Silly],
-    ['trace', LogLevel.Trace],
-    ['debug', LogLevel.Debug],
-    ['info', LogLevel.Info],
-    ['warning', LogLevel.Warning],
-    ['error', LogLevel.Error],
-    ['fatal', LogLevel.Fatal],
-  ])
-
-  const result: LogLevel | undefined = allowed.get(logLevel.toLowerCase())
-  if (result == null) {
-    throw new InvalidEnumParameterError('log-level', Array.from(allowed.keys()))
-  }
-  return result
-}
 
 export function processSarifExtension(extension: string): SarifFileExtension {
   const allowed: string[] = ['sarif', 'json']

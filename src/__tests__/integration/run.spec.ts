@@ -111,6 +111,11 @@ describe('(integration): run', (): void => {
             expect(opts?.required).toBe(false)
             expect(opts?.trimWhitespace).toBe(false)
             return process.env.SARIF_TO_SLACK_LOG_TEMPLATE as string
+          case 'log-colored':
+            expect(opts).not.toBeFalsy()
+            expect(opts?.required).toBe(false)
+            expect(opts?.trimWhitespace).toBe(true)
+            return process.env.SARIF_TO_SLACK_LOG_COLORED as string
           case 'header':
             expect(opts).not.toBeFalsy()
             expect(opts?.required).toBe(false)
@@ -149,11 +154,6 @@ describe('(integration): run', (): void => {
             expect(opts?.required).toBe(false)
             expect(opts?.trimWhitespace).toBe(true)
             return Boolean(process.env.SARIF_TO_SLACK_SARIF_PATH_RECURSIVE)
-          case 'log-colored':
-            expect(opts).not.toBeFalsy()
-            expect(opts?.required).toBe(false)
-            expect(opts?.trimWhitespace).toBe(true)
-            return Boolean(process.env.SARIF_TO_SLACK_LOG_COLORED)
           case 'include-header':
             expect(opts).not.toBeFalsy()
             expect(opts?.required).toBe(false)
