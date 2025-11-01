@@ -48081,6 +48081,7 @@ var require_axios = __commonJS({
     var FormData$1 = require_form_data();
     var crypto = require("crypto");
     var url = require("url");
+    var http2 = require("http2");
     var proxyFromEnv = require_proxy_from_env();
     var http = require("http");
     var https = require("https");
@@ -48763,7 +48764,7 @@ var require_axios = __commonJS({
        *
        * @param {Number} id The ID that was returned by `use`
        *
-       * @returns {Boolean} `true` if the interceptor was removed, `false` otherwise
+       * @returns {void}
        */
       eject(id) {
         if (this.handlers[id]) {
@@ -49340,7 +49341,7 @@ var require_axios = __commonJS({
       }
       return requestedURL;
     }
-    var VERSION = "1.12.2";
+    var VERSION = "1.13.1";
     function parseProtocol(url2) {
       const match = /^([-+\w]{1,25})(:?\/\/|:)/.exec(url2);
       return match && match[1] || "";
@@ -49761,6 +49762,12 @@ var require_axios = __commonJS({
       flush: zlib__default["default"].constants.BROTLI_OPERATION_FLUSH,
       finishFlush: zlib__default["default"].constants.BROTLI_OPERATION_FLUSH
     };
+    var {
+      HTTP2_HEADER_SCHEME,
+      HTTP2_HEADER_METHOD,
+      HTTP2_HEADER_PATH,
+      HTTP2_HEADER_STATUS
+    } = http2.constants;
     var isBrotliSupported = utils$1.isFunction(zlib__default["default"].createBrotliDecompress);
     var { http: httpFollow, https: httpsFollow } = followRedirects__default["default"];
     var isHttps = /https:?/;
@@ -49771,6 +49778,75 @@ var require_axios = __commonJS({
       stream2.on("end", flush).on("error", flush);
       return throttled;
     };
+    var Http2Sessions = class {
+      constructor() {
+        this.sessions = /* @__PURE__ */ Object.create(null);
+      }
+      getSession(authority, options) {
+        options = Object.assign({
+          sessionTimeout: 1e3
+        }, options);
+        let authoritySessions;
+        if (authoritySessions = this.sessions[authority]) {
+          let len = authoritySessions.length;
+          for (let i = 0; i < len; i++) {
+            const [sessionHandle, sessionOptions] = authoritySessions[i];
+            if (!sessionHandle.destroyed && !sessionHandle.closed && util__default["default"].isDeepStrictEqual(sessionOptions, options)) {
+              return sessionHandle;
+            }
+          }
+        }
+        const session = http2.connect(authority, options);
+        let removed;
+        const removeSession = () => {
+          if (removed) {
+            return;
+          }
+          removed = true;
+          let entries2 = authoritySessions, len = entries2.length, i = len;
+          while (i--) {
+            if (entries2[i][0] === session) {
+              entries2.splice(i, 1);
+              if (len === 1) {
+                delete this.sessions[authority];
+                return;
+              }
+            }
+          }
+        };
+        const originalRequestFn = session.request;
+        const { sessionTimeout } = options;
+        if (sessionTimeout != null) {
+          let timer;
+          let streamsCount = 0;
+          session.request = function() {
+            const stream2 = originalRequestFn.apply(this, arguments);
+            streamsCount++;
+            if (timer) {
+              clearTimeout(timer);
+              timer = null;
+            }
+            stream2.once("close", () => {
+              if (!--streamsCount) {
+                timer = setTimeout(() => {
+                  timer = null;
+                  removeSession();
+                }, sessionTimeout);
+              }
+            });
+            return stream2;
+          };
+        }
+        session.once("close", removeSession);
+        let entries = this.sessions[authority], entry = [
+          session,
+          options
+        ];
+        entries ? this.sessions[authority].push(entry) : authoritySessions = this.sessions[authority] = [entry];
+        return session;
+      }
+    };
+    var http2Sessions = new Http2Sessions();
     function dispatchBeforeRedirect(options, responseDetails) {
       if (options.beforeRedirects.proxy) {
         options.beforeRedirects.proxy(options);
@@ -49843,14 +49919,48 @@ var require_axios = __commonJS({
       };
     };
     var buildAddressEntry = (address, family) => resolveFamily(utils$1.isObject(address) ? address : { address, family });
+    var http2Transport = {
+      request(options, cb) {
+        const authority = options.protocol + "//" + options.hostname + ":" + (options.port || 80);
+        const { http2Options, headers } = options;
+        const session = http2Sessions.getSession(authority, http2Options);
+        const http2Headers = {
+          [HTTP2_HEADER_SCHEME]: options.protocol.replace(":", ""),
+          [HTTP2_HEADER_METHOD]: options.method,
+          [HTTP2_HEADER_PATH]: options.path
+        };
+        utils$1.forEach(headers, (header, name) => {
+          name.charAt(0) !== ":" && (http2Headers[name] = header);
+        });
+        const req = session.request(http2Headers);
+        req.once("response", (responseHeaders) => {
+          const response = req;
+          responseHeaders = Object.assign({}, responseHeaders);
+          const status = responseHeaders[HTTP2_HEADER_STATUS];
+          delete responseHeaders[HTTP2_HEADER_STATUS];
+          response.headers = responseHeaders;
+          response.statusCode = +status;
+          cb(response);
+        });
+        return req;
+      }
+    };
     var httpAdapter = isHttpAdapterSupported && function httpAdapter2(config) {
       return wrapAsync(async function dispatchHttpRequest(resolve, reject, onDone) {
-        let { data, lookup, family } = config;
+        let { data, lookup, family, httpVersion = 1, http2Options } = config;
         const { responseType, responseEncoding } = config;
         const method = config.method.toUpperCase();
         let isDone;
         let rejected = false;
         let req;
+        httpVersion = +httpVersion;
+        if (Number.isNaN(httpVersion)) {
+          throw TypeError(`Invalid protocol version: '${config.httpVersion}' is not a number`);
+        }
+        if (httpVersion !== 1 && httpVersion !== 2) {
+          throw TypeError(`Unsupported protocol version '${httpVersion}'`);
+        }
+        const isHttp2 = httpVersion === 2;
         if (lookup) {
           const _lookup = callbackify$1(lookup, (value) => utils$1.isArray(value) ? value : [value]);
           lookup = (hostname, opt, cb) => {
@@ -49863,7 +49973,15 @@ var require_axios = __commonJS({
             });
           };
         }
-        const emitter = new events.EventEmitter();
+        const abortEmitter = new events.EventEmitter();
+        function abort(reason) {
+          try {
+            abortEmitter.emit("abort", !reason || reason.type ? new CanceledError(null, config, req) : reason);
+          } catch (err) {
+            console.warn("emit error", err);
+          }
+        }
+        abortEmitter.once("abort", reject);
         const onFinished = () => {
           if (config.cancelToken) {
             config.cancelToken.unsubscribe(abort);
@@ -49871,25 +49989,31 @@ var require_axios = __commonJS({
           if (config.signal) {
             config.signal.removeEventListener("abort", abort);
           }
-          emitter.removeAllListeners();
+          abortEmitter.removeAllListeners();
         };
-        onDone((value, isRejected) => {
-          isDone = true;
-          if (isRejected) {
-            rejected = true;
-            onFinished();
-          }
-        });
-        function abort(reason) {
-          emitter.emit("abort", !reason || reason.type ? new CanceledError(null, config, req) : reason);
-        }
-        emitter.once("abort", reject);
         if (config.cancelToken || config.signal) {
           config.cancelToken && config.cancelToken.subscribe(abort);
           if (config.signal) {
             config.signal.aborted ? abort() : config.signal.addEventListener("abort", abort);
           }
         }
+        onDone((response, isRejected) => {
+          isDone = true;
+          if (isRejected) {
+            rejected = true;
+            onFinished();
+            return;
+          }
+          const { data: data2 } = response;
+          if (data2 instanceof stream__default["default"].Readable || data2 instanceof stream__default["default"].Duplex) {
+            const offListeners = stream__default["default"].finished(data2, () => {
+              offListeners();
+              onFinished();
+            });
+          } else {
+            onFinished();
+          }
+        });
         const fullPath = buildFullPath(config.baseURL, config.url, config.allowAbsoluteUrls);
         const parsed = new URL(fullPath, platform.hasBrowserEnv ? platform.origin : void 0);
         const protocol = parsed.protocol || supportedProtocols[0];
@@ -50055,7 +50179,8 @@ var require_axios = __commonJS({
           protocol,
           family,
           beforeRedirect: dispatchBeforeRedirect,
-          beforeRedirects: {}
+          beforeRedirects: {},
+          http2Options
         };
         !utils$1.isUndefined(lookup) && (options.lookup = lookup);
         if (config.socketPath) {
@@ -50068,18 +50193,22 @@ var require_axios = __commonJS({
         let transport;
         const isHttpsRequest = isHttps.test(options.protocol);
         options.agent = isHttpsRequest ? config.httpsAgent : config.httpAgent;
-        if (config.transport) {
-          transport = config.transport;
-        } else if (config.maxRedirects === 0) {
-          transport = isHttpsRequest ? https__default["default"] : http__default["default"];
+        if (isHttp2) {
+          transport = http2Transport;
         } else {
-          if (config.maxRedirects) {
-            options.maxRedirects = config.maxRedirects;
+          if (config.transport) {
+            transport = config.transport;
+          } else if (config.maxRedirects === 0) {
+            transport = isHttpsRequest ? https__default["default"] : http__default["default"];
+          } else {
+            if (config.maxRedirects) {
+              options.maxRedirects = config.maxRedirects;
+            }
+            if (config.beforeRedirect) {
+              options.beforeRedirects.config = config.beforeRedirect;
+            }
+            transport = isHttpsRequest ? httpsFollow : httpFollow;
           }
-          if (config.beforeRedirect) {
-            options.beforeRedirects.config = config.beforeRedirect;
-          }
-          transport = isHttpsRequest ? httpsFollow : httpFollow;
         }
         if (config.maxBodyLength > -1) {
           options.maxBodyLength = config.maxBodyLength;
@@ -50092,7 +50221,7 @@ var require_axios = __commonJS({
         req = transport.request(options, function handleResponse(res) {
           if (req.destroyed) return;
           const streams = [res];
-          const responseLength = +res.headers["content-length"];
+          const responseLength = utils$1.toFiniteNumber(res.headers["content-length"]);
           if (onDownloadProgress || maxDownloadRate) {
             const transformStream = new AxiosTransformStream$1({
               maxRate: utils$1.toFiniteNumber(maxDownloadRate)
@@ -50134,10 +50263,6 @@ var require_axios = __commonJS({
             }
           }
           responseStream = streams.length > 1 ? stream__default["default"].pipeline(streams, utils$1.noop) : streams[0];
-          const offListeners = stream__default["default"].finished(responseStream, () => {
-            offListeners();
-            onFinished();
-          });
           const response = {
             status: res.statusCode,
             statusText: res.statusMessage,
@@ -50157,7 +50282,7 @@ var require_axios = __commonJS({
               if (config.maxContentLength > -1 && totalResponseBytes > config.maxContentLength) {
                 rejected = true;
                 responseStream.destroy();
-                reject(new AxiosError(
+                abort(new AxiosError(
                   "maxContentLength size of " + config.maxContentLength + " exceeded",
                   AxiosError.ERR_BAD_RESPONSE,
                   config,
@@ -50198,16 +50323,19 @@ var require_axios = __commonJS({
               settle(resolve, reject, response);
             });
           }
-          emitter.once("abort", (err) => {
+          abortEmitter.once("abort", (err) => {
             if (!responseStream.destroyed) {
               responseStream.emit("error", err);
               responseStream.destroy();
             }
           });
         });
-        emitter.once("abort", (err) => {
-          reject(err);
-          req.destroy(err);
+        abortEmitter.once("abort", (err) => {
+          if (req.close) {
+            req.close();
+          } else {
+            req.destroy(err);
+          }
         });
         req.on("error", function handleRequestError(err) {
           reject(AxiosError.from(err, null, config, req));
@@ -50218,7 +50346,7 @@ var require_axios = __commonJS({
         if (config.timeout) {
           const timeout = parseInt(config.timeout, 10);
           if (Number.isNaN(timeout)) {
-            reject(new AxiosError(
+            abort(new AxiosError(
               "error trying to parse `config.timeout` to int",
               AxiosError.ERR_BAD_OPTION_VALUE,
               config,
@@ -50233,13 +50361,12 @@ var require_axios = __commonJS({
             if (config.timeoutErrorMessage) {
               timeoutErrorMessage = config.timeoutErrorMessage;
             }
-            reject(new AxiosError(
+            abort(new AxiosError(
               timeoutErrorMessage,
               transitional.clarifyTimeoutError ? AxiosError.ETIMEDOUT : AxiosError.ECONNABORTED,
               config,
               req
             ));
-            abort();
           });
         }
         if (utils$1.isStream(data)) {
@@ -50259,7 +50386,8 @@ var require_axios = __commonJS({
           });
           data.pipe(req);
         } else {
-          req.end(data);
+          data && req.write(data);
+          req.end();
         }
       });
     };
@@ -50273,20 +50401,33 @@ var require_axios = __commonJS({
     var cookies = platform.hasStandardBrowserEnv ? (
       // Standard browser envs support document.cookie
       {
-        write(name, value, expires, path, domain, secure) {
-          const cookie = [name + "=" + encodeURIComponent(value)];
-          utils$1.isNumber(expires) && cookie.push("expires=" + new Date(expires).toGMTString());
-          utils$1.isString(path) && cookie.push("path=" + path);
-          utils$1.isString(domain) && cookie.push("domain=" + domain);
-          secure === true && cookie.push("secure");
+        write(name, value, expires, path, domain, secure, sameSite) {
+          if (typeof document === "undefined") return;
+          const cookie = [`${name}=${encodeURIComponent(value)}`];
+          if (utils$1.isNumber(expires)) {
+            cookie.push(`expires=${new Date(expires).toUTCString()}`);
+          }
+          if (utils$1.isString(path)) {
+            cookie.push(`path=${path}`);
+          }
+          if (utils$1.isString(domain)) {
+            cookie.push(`domain=${domain}`);
+          }
+          if (secure === true) {
+            cookie.push("secure");
+          }
+          if (utils$1.isString(sameSite)) {
+            cookie.push(`SameSite=${sameSite}`);
+          }
           document.cookie = cookie.join("; ");
         },
         read(name) {
-          const match = document.cookie.match(new RegExp("(^|;\\s*)(" + name + ")=([^;]*)"));
-          return match ? decodeURIComponent(match[3]) : null;
+          if (typeof document === "undefined") return null;
+          const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+          return match ? decodeURIComponent(match[1]) : null;
         },
         remove(name) {
-          this.write(name, "", Date.now() - 864e5);
+          this.write(name, "", Date.now() - 864e5, "/");
         }
       }
     ) : (
@@ -50841,7 +50982,7 @@ var require_axios = __commonJS({
     };
     var seedCache = /* @__PURE__ */ new Map();
     var getFetch = (config) => {
-      let env = config ? config.env : {};
+      let env = config && config.env || {};
       const { fetch: fetch2, Request, Response } = env;
       const seeds = [
         Request,
@@ -50876,40 +51017,49 @@ var require_axios = __commonJS({
     });
     var renderReason = (reason) => `- ${reason}`;
     var isResolvedHandle = (adapter) => utils$1.isFunction(adapter) || adapter === null || adapter === false;
+    function getAdapter(adapters2, config) {
+      adapters2 = utils$1.isArray(adapters2) ? adapters2 : [adapters2];
+      const { length } = adapters2;
+      let nameOrAdapter;
+      let adapter;
+      const rejectedReasons = {};
+      for (let i = 0; i < length; i++) {
+        nameOrAdapter = adapters2[i];
+        let id;
+        adapter = nameOrAdapter;
+        if (!isResolvedHandle(nameOrAdapter)) {
+          adapter = knownAdapters[(id = String(nameOrAdapter)).toLowerCase()];
+          if (adapter === void 0) {
+            throw new AxiosError(`Unknown adapter '${id}'`);
+          }
+        }
+        if (adapter && (utils$1.isFunction(adapter) || (adapter = adapter.get(config)))) {
+          break;
+        }
+        rejectedReasons[id || "#" + i] = adapter;
+      }
+      if (!adapter) {
+        const reasons = Object.entries(rejectedReasons).map(
+          ([id, state]) => `adapter ${id} ` + (state === false ? "is not supported by the environment" : "is not available in the build")
+        );
+        let s = length ? reasons.length > 1 ? "since :\n" + reasons.map(renderReason).join("\n") : " " + renderReason(reasons[0]) : "as no adapter specified";
+        throw new AxiosError(
+          `There is no suitable adapter to dispatch the request ` + s,
+          "ERR_NOT_SUPPORT"
+        );
+      }
+      return adapter;
+    }
     var adapters = {
-      getAdapter: (adapters2, config) => {
-        adapters2 = utils$1.isArray(adapters2) ? adapters2 : [adapters2];
-        const { length } = adapters2;
-        let nameOrAdapter;
-        let adapter;
-        const rejectedReasons = {};
-        for (let i = 0; i < length; i++) {
-          nameOrAdapter = adapters2[i];
-          let id;
-          adapter = nameOrAdapter;
-          if (!isResolvedHandle(nameOrAdapter)) {
-            adapter = knownAdapters[(id = String(nameOrAdapter)).toLowerCase()];
-            if (adapter === void 0) {
-              throw new AxiosError(`Unknown adapter '${id}'`);
-            }
-          }
-          if (adapter && (utils$1.isFunction(adapter) || (adapter = adapter.get(config)))) {
-            break;
-          }
-          rejectedReasons[id || "#" + i] = adapter;
-        }
-        if (!adapter) {
-          const reasons = Object.entries(rejectedReasons).map(
-            ([id, state]) => `adapter ${id} ` + (state === false ? "is not supported by the environment" : "is not available in the build")
-          );
-          let s = length ? reasons.length > 1 ? "since :\n" + reasons.map(renderReason).join("\n") : " " + renderReason(reasons[0]) : "as no adapter specified";
-          throw new AxiosError(
-            `There is no suitable adapter to dispatch the request ` + s,
-            "ERR_NOT_SUPPORT"
-          );
-        }
-        return adapter;
-      },
+      /**
+       * Resolve an adapter from a list of adapter names or functions.
+       * @type {Function}
+       */
+      getAdapter,
+      /**
+       * Exposes all known adapters
+       * @type {Object<string, Function|Object>}
+       */
       adapters: knownAdapters
     };
     function throwIfCancellationRequested(config) {
@@ -51354,7 +51504,13 @@ var require_axios = __commonJS({
       InsufficientStorage: 507,
       LoopDetected: 508,
       NotExtended: 510,
-      NetworkAuthenticationRequired: 511
+      NetworkAuthenticationRequired: 511,
+      WebServerIsDown: 521,
+      ConnectionTimedOut: 522,
+      OriginIsUnreachable: 523,
+      TimeoutOccurred: 524,
+      SslHandshakeFailed: 525,
+      InvalidSslCertificate: 526
     };
     Object.entries(HttpStatusCode).forEach(([key, value]) => {
       HttpStatusCode[value] = key;
@@ -53328,5 +53484,5 @@ mime-types/index.js:
    *)
 
 axios/dist/node/axios.cjs:
-  (*! Axios v1.12.2 Copyright (c) 2025 Matt Zabriskie and contributors *)
+  (*! Axios v1.13.1 Copyright (c) 2025 Matt Zabriskie and contributors *)
 */
