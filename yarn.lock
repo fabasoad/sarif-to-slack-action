@@ -417,7 +417,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@biomejs/biome@npm:~2.3.5":
+"@biomejs/biome@npm:~2.3.6":
   version: 2.3.6
   resolution: "@biomejs/biome@npm:2.3.6"
   dependencies:
@@ -3814,7 +3814,7 @@ __metadata:
   resolution: "sarif-to-slack-action@workspace:."
   dependencies:
     "@actions/core": "npm:~1.11.1"
-    "@biomejs/biome": "npm:~2.3.5"
+    "@biomejs/biome": "npm:~2.3.6"
     "@fabasoad/sarif-to-slack": "npm:~1.3.3"
     "@types/jest": "npm:~30.0.0"
     esbuild: "npm:~0.27.0"
