@@ -46720,7 +46720,7 @@ var require_form_data = __commonJS({
     FormData2.prototype.toString = function() {
       return "[object FormData]";
     };
-    setToStringTag(FormData2, "FormData");
+    setToStringTag(FormData2.prototype, "FormData");
     module2.exports = FormData2;
   }
 });
@@ -48081,10 +48081,10 @@ var require_axios = __commonJS({
     var FormData$1 = require_form_data();
     var crypto = require("crypto");
     var url = require("url");
-    var http2 = require("http2");
     var proxyFromEnv = require_proxy_from_env();
     var http = require("http");
     var https = require("https");
+    var http2 = require("http2");
     var util = require("util");
     var followRedirects = require_follow_redirects();
     var zlib = require("zlib");
@@ -48099,6 +48099,7 @@ var require_axios = __commonJS({
     var proxyFromEnv__default = /* @__PURE__ */ _interopDefaultLegacy(proxyFromEnv);
     var http__default = /* @__PURE__ */ _interopDefaultLegacy(http);
     var https__default = /* @__PURE__ */ _interopDefaultLegacy(https);
+    var http2__default = /* @__PURE__ */ _interopDefaultLegacy(http2);
     var util__default = /* @__PURE__ */ _interopDefaultLegacy(util);
     var followRedirects__default = /* @__PURE__ */ _interopDefaultLegacy(followRedirects);
     var zlib__default = /* @__PURE__ */ _interopDefaultLegacy(zlib);
@@ -49341,7 +49342,7 @@ var require_axios = __commonJS({
       }
       return requestedURL;
     }
-    var VERSION = "1.13.1";
+    var VERSION = "1.13.2";
     function parseProtocol(url2) {
       const match = /^([-+\w]{1,25})(:?\/\/|:)/.exec(url2);
       return match && match[1] || "";
@@ -49762,12 +49763,6 @@ var require_axios = __commonJS({
       flush: zlib__default["default"].constants.BROTLI_OPERATION_FLUSH,
       finishFlush: zlib__default["default"].constants.BROTLI_OPERATION_FLUSH
     };
-    var {
-      HTTP2_HEADER_SCHEME,
-      HTTP2_HEADER_METHOD,
-      HTTP2_HEADER_PATH,
-      HTTP2_HEADER_STATUS
-    } = http2.constants;
     var isBrotliSupported = utils$1.isFunction(zlib__default["default"].createBrotliDecompress);
     var { http: httpFollow, https: httpsFollow } = followRedirects__default["default"];
     var isHttps = /https:?/;
@@ -49786,8 +49781,8 @@ var require_axios = __commonJS({
         options = Object.assign({
           sessionTimeout: 1e3
         }, options);
-        let authoritySessions;
-        if (authoritySessions = this.sessions[authority]) {
+        let authoritySessions = this.sessions[authority];
+        if (authoritySessions) {
           let len = authoritySessions.length;
           for (let i = 0; i < len; i++) {
             const [sessionHandle, sessionOptions] = authoritySessions[i];
@@ -49796,21 +49791,22 @@ var require_axios = __commonJS({
             }
           }
         }
-        const session = http2.connect(authority, options);
+        const session = http2__default["default"].connect(authority, options);
         let removed;
         const removeSession = () => {
           if (removed) {
             return;
           }
           removed = true;
-          let entries2 = authoritySessions, len = entries2.length, i = len;
+          let entries = authoritySessions, len = entries.length, i = len;
           while (i--) {
-            if (entries2[i][0] === session) {
-              entries2.splice(i, 1);
+            if (entries[i][0] === session) {
               if (len === 1) {
                 delete this.sessions[authority];
-                return;
+              } else {
+                entries.splice(i, 1);
               }
+              return;
             }
           }
         };
@@ -49838,11 +49834,11 @@ var require_axios = __commonJS({
           };
         }
         session.once("close", removeSession);
-        let entries = this.sessions[authority], entry = [
+        let entry = [
           session,
           options
         ];
-        entries ? this.sessions[authority].push(entry) : authoritySessions = this.sessions[authority] = [entry];
+        authoritySessions ? authoritySessions.push(entry) : authoritySessions = this.sessions[authority] = [entry];
         return session;
       }
     };
@@ -49924,6 +49920,12 @@ var require_axios = __commonJS({
         const authority = options.protocol + "//" + options.hostname + ":" + (options.port || 80);
         const { http2Options, headers } = options;
         const session = http2Sessions.getSession(authority, http2Options);
+        const {
+          HTTP2_HEADER_SCHEME,
+          HTTP2_HEADER_METHOD,
+          HTTP2_HEADER_PATH,
+          HTTP2_HEADER_STATUS
+        } = http2__default["default"].constants;
         const http2Headers = {
           [HTTP2_HEADER_SCHEME]: options.protocol.replace(":", ""),
           [HTTP2_HEADER_METHOD]: options.method,
@@ -50368,6 +50370,8 @@ var require_axios = __commonJS({
               req
             ));
           });
+        } else {
+          req.setTimeout(0);
         }
         if (utils$1.isStream(data)) {
           let ended = false;
@@ -53484,5 +53488,5 @@ mime-types/index.js:
    *)
 
 axios/dist/node/axios.cjs:
-  (*! Axios v1.13.1 Copyright (c) 2025 Matt Zabriskie and contributors *)
+  (*! Axios v1.13.2 Copyright (c) 2025 Matt Zabriskie and contributors *)
 */
