@@ -24,6 +24,10 @@ reinstall: clean install
 lint:
 	@yarn run lint
 
+.PHONY: outdated
+outdated:
+	@yarn outdated
+
 .PHONY: test/integration
 test/integration:
 	@npm run test:integration
