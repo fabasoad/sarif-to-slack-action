@@ -1,6 +1,6 @@
 {
   "name": "sarif-to-slack-action",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "This GitHub action sends notification to Slack based on SARIF file.",
   "main": "dist/index.js",
   "scripts": {
@@ -31,11 +31,12 @@
   "devDependencies": {
     "@biomejs/biome": "~2.4.9",
     "@types/jest": "~30.0.0",
+    "@types/node": "~25.5.0",
     "esbuild": "~0.27.4",
     "jest": "~30.3.0",
     "jest-circus": "~30.3.0",
     "ts-jest": "~29.4.6",
-    "typescript": "~5.9.3"
+    "typescript": "~6.0.2"
   },
   "packageManager": "yarn@4.13.0"
 }
