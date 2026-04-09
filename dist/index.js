@@ -51927,9 +51927,9 @@ var require_dist2 = __commonJS({
     var import_tslog = require_cjs();
     var import_zod2 = require_zod();
     var import_zod = require_zod();
-    var version = "1.3.4";
-    var sha = "7dcec52f94545c8b5319ca92f2e77130b7bd0f3a";
-    var buildAt = "2026-02-13T14:07:20Z";
+    var version = "1.3.5";
+    var sha = "4b44572f95bfdaab5159a2bd89a3ed2b193b55aa";
+    var buildAt = "2026-04-04T14:25:40Z";
     function logMetadata() {
       const logger = new Logger(logMetadata.name);
       logger.info(`version: ${version}`);
@@ -52273,6 +52273,7 @@ ${summary2}`;
         this.header = header;
         this._cells = new Array(cellsCount);
       }
+      header;
       _logger = new Logger("Column");
       _cells;
       get total() {
@@ -52302,6 +52303,7 @@ ${summary2}`;
         this._value = _value;
         this._width = _value.toString().length;
       }
+      _value;
       _width;
       setWidth(width) {
         this._width = width > this._width ? width : this._width;
@@ -52325,6 +52327,8 @@ ${summary2}`;
         this._cells = Array.from({ length: cellsCount }, () => new Cell());
         this._totalWidth = 1;
       }
+      _header;
+      headerWidth;
       _logger = new Logger("Row");
       _cells;
       _totalWidth;
@@ -52429,6 +52433,9 @@ ${summary2}`;
         this._keyPer = _keyPer;
         this._values = _values;
       }
+      _keyBy;
+      _keyPer;
+      _values;
       _logger = new Logger("TableGroupRepresentation");
       groupFindingsPer(findings) {
         return findings.reduce(
