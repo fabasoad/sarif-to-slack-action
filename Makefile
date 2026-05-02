@@ -2,31 +2,29 @@
 
 .PHONY: audit
 audit:
-	@yarn npm audit --all
+	@npm audit --audit-level moderate --package-lock-only --include dev
 
 .PHONY: build
 build:
-	@yarn run build
+	@npm run build
 
 .PHONY: clean
 clean:
-	@rm -f yarn.lock
-	@rm -rf node_modules
+	@npm run clean
 
 .PHONY: install
 install:
-	@yarn install
+	@npm install
 
 .PHONY: reinstall
-reinstall: clean install
+reinstall:
+	@make clean
+	@npm run clean:unsafe
+	@make install
 
 .PHONY: lint
 lint:
-	@yarn run lint
-
-.PHONY: outdated
-outdated:
-	@yarn outdated
+	@npm run lint
 
 .PHONY: test/integration
 test/integration:
@@ -39,7 +37,17 @@ test/unit:
 .PHONY: test
 test: test/unit
 
-.PHONY: upgrade
-upgrade:
-	@pre-commit autoupdate
-	@yarn upgrade-interactive
+.PHONY: npm/update
+npm/update:
+	@npm update
+
+.PHONY: pre-commit/update
+pre-commit/update:
+	@command -v prek >/dev/null 2>&1 && prek auto-update || pre-commit autoupdate
+
+.PHONY: update
+update: npm/update pre-commit/update
+
+.PHONY: outdated
+outdated:
+	@npm outdated
