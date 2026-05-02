@@ -2041,13 +2041,20 @@ var require_dispatcher_base = __commonJS({
     var kOnDestroyed = /* @__PURE__ */ Symbol("onDestroyed");
     var kOnClosed = /* @__PURE__ */ Symbol("onClosed");
     var kInterceptedDispatch = /* @__PURE__ */ Symbol("Intercepted Dispatch");
+    var kWebSocketOptions = /* @__PURE__ */ Symbol("webSocketOptions");
     var DispatcherBase = class extends Dispatcher {
-      constructor() {
+      constructor(opts) {
         super();
         this[kDestroyed] = false;
         this[kOnDestroyed] = null;
         this[kClosed] = false;
         this[kOnClosed] = [];
+        this[kWebSocketOptions] = opts?.webSocket ?? {};
+      }
+      get webSocketOptions() {
+        return {
+          maxPayloadSize: this[kWebSocketOptions].maxPayloadSize ?? 128 * 1024 * 1024
+        };
       }
       get destroyed() {
         return this[kDestroyed];
@@ -7486,9 +7493,10 @@ var require_client = __commonJS({
         autoSelectFamilyAttemptTimeout,
         // h2
         maxConcurrentStreams,
-        allowH2
+        allowH2,
+        webSocket
       } = {}) {
-        super();
+        super({ webSocket });
         if (keepAlive !== void 0) {
           throw new InvalidArgumentError("unsupported keepAlive, use pipelining=0 instead");
         }
@@ -7994,8 +8002,8 @@ var require_pool_base = __commonJS({
     var kRemoveClient = /* @__PURE__ */ Symbol("remove client");
     var kStats = /* @__PURE__ */ Symbol("stats");
     var PoolBase = class extends DispatcherBase {
-      constructor() {
-        super();
+      constructor(opts) {
+        super(opts);
         this[kQueue] = new FixedQueue();
         this[kClients] = [];
         this[kQueued] = 0;
@@ -8166,7 +8174,6 @@ var require_pool = __commonJS({
         allowH2,
         ...options
       } = {}) {
-        super();
         if (connections != null && (!Number.isFinite(connections) || connections < 0)) {
           throw new InvalidArgumentError("invalid connections");
         }
@@ -8187,6 +8194,7 @@ var require_pool = __commonJS({
             ...connect
           });
         }
+        super(options);
         this[kInterceptors] = options.interceptors?.Pool && Array.isArray(options.interceptors.Pool) ? options.interceptors.Pool : [];
         this[kConnections] = connections || null;
         this[kUrl] = util.parseOrigin(origin);
@@ -8386,7 +8394,6 @@ var require_agent = __commonJS({
     }
     var Agent = class extends DispatcherBase {
       constructor({ factory = defaultFactory, maxRedirections = 0, connect, ...options } = {}) {
-        super();
         if (typeof factory !== "function") {
           throw new InvalidArgumentError("factory must be a function.");
         }
@@ -8396,6 +8403,7 @@ var require_agent = __commonJS({
         if (!Number.isInteger(maxRedirections) || maxRedirections < 0) {
           throw new InvalidArgumentError("maxRedirections must be a positive number");
         }
+        super(options);
         if (connect && typeof connect !== "function") {
           connect = { ...connect };
         }
@@ -17029,27 +17037,26 @@ var require_permessage_deflate = __commonJS({
     var tail = Buffer.from([0, 0, 255, 255]);
     var kBuffer = /* @__PURE__ */ Symbol("kBuffer");
     var kLength = /* @__PURE__ */ Symbol("kLength");
-    var kDefaultMaxDecompressedSize = 4 * 1024 * 1024;
     var PerMessageDeflate = class {
       /** @type {import('node:zlib').InflateRaw} */
       #inflate;
       #options = {};
-      /** @type {boolean} */
-      #aborted = false;
-      /** @type {Function|null} */
-      #currentCallback = null;
+      #maxPayloadSize = 0;
       /**
        * @param {Map<string, string>} extensions
        */
-      constructor(extensions) {
+      constructor(extensions, options) {
         this.#options.serverNoContextTakeover = extensions.has("server_no_context_takeover");
         this.#options.serverMaxWindowBits = extensions.get("server_max_window_bits");
+        this.#maxPayloadSize = options.maxPayloadSize;
       }
+      /**
+       * Decompress a compressed payload.
+       * @param {Buffer} chunk Compressed data
+       * @param {boolean} fin Final fragment flag
+       * @param {Function} callback Callback function
+       */
       decompress(chunk, fin, callback) {
-        if (this.#aborted) {
-          callback(new MessageSizeExceededError());
-          return;
-        }
         if (!this.#inflate) {
           let windowBits = Z_DEFAULT_WINDOWBITS;
           if (this.#options.serverMaxWindowBits) {
@@ -17068,20 +17075,11 @@ var require_permessage_deflate = __commonJS({
           this.#inflate[kBuffer] = [];
           this.#inflate[kLength] = 0;
           this.#inflate.on("data", (data) => {
-            if (this.#aborted) {
-              return;
-            }
             this.#inflate[kLength] += data.length;
-            if (this.#inflate[kLength] > kDefaultMaxDecompressedSize) {
-              this.#aborted = true;
+            if (this.#maxPayloadSize > 0 && this.#inflate[kLength] > this.#maxPayloadSize) {
+              callback(new MessageSizeExceededError());
               this.#inflate.removeAllListeners();
-              this.#inflate.destroy();
               this.#inflate = null;
-              if (this.#currentCallback) {
-                const cb = this.#currentCallback;
-                this.#currentCallback = null;
-                cb(new MessageSizeExceededError());
-              }
               return;
             }
             this.#inflate[kBuffer].push(data);
@@ -17091,19 +17089,17 @@ var require_permessage_deflate = __commonJS({
             callback(err);
           });
         }
-        this.#currentCallback = callback;
         this.#inflate.write(chunk);
         if (fin) {
           this.#inflate.write(tail);
         }
         this.#inflate.flush(() => {
-          if (this.#aborted || !this.#inflate) {
+          if (!this.#inflate) {
             return;
           }
           const full = Buffer.concat(this.#inflate[kBuffer], this.#inflate[kLength]);
           this.#inflate[kBuffer].length = 0;
           this.#inflate[kLength] = 0;
-          this.#currentCallback = null;
           callback(null, full);
         });
       }
@@ -17134,8 +17130,10 @@ var require_receiver = __commonJS({
     var { WebsocketFrameSend } = require_frame();
     var { closeWebSocketConnection } = require_connection();
     var { PerMessageDeflate } = require_permessage_deflate();
+    var { MessageSizeExceededError } = require_errors();
     var ByteParser = class extends Writable {
       #buffers = [];
+      #fragmentsBytes = 0;
       #byteOffset = 0;
       #loop = false;
       #state = parserStates.INFO;
@@ -17143,16 +17141,20 @@ var require_receiver = __commonJS({
       #fragments = [];
       /** @type {Map<string, PerMessageDeflate>} */
       #extensions;
+      /** @type {number} */
+      #maxPayloadSize;
       /**
        * @param {import('./websocket').WebSocket} ws
        * @param {Map<string, string>|null} extensions
+       * @param {{ maxPayloadSize?: number }} [options]
        */
-      constructor(ws, extensions) {
+      constructor(ws, extensions, options = {}) {
         super();
         this.ws = ws;
         this.#extensions = extensions == null ? /* @__PURE__ */ new Map() : extensions;
+        this.#maxPayloadSize = options.maxPayloadSize ?? 0;
         if (this.#extensions.has("permessage-deflate")) {
-          this.#extensions.set("permessage-deflate", new PerMessageDeflate(extensions));
+          this.#extensions.set("permessage-deflate", new PerMessageDeflate(extensions, options));
         }
       }
       /**
@@ -17164,6 +17166,13 @@ var require_receiver = __commonJS({
         this.#byteOffset += chunk.length;
         this.#loop = true;
         this.run(callback);
+      }
+      #validatePayloadLength() {
+        if (this.#maxPayloadSize > 0 && !isControlFrame(this.#info.opcode) && this.#info.payloadLength > this.#maxPayloadSize) {
+          failWebsocketConnection(this.ws, "Payload size exceeds maximum allowed size");
+          return false;
+        }
+        return true;
       }
       /**
        * Runs whenever a new chunk is received.
@@ -17224,6 +17233,9 @@ var require_receiver = __commonJS({
             if (payloadLength <= 125) {
               this.#info.payloadLength = payloadLength;
               this.#state = parserStates.READ_DATA;
+              if (!this.#validatePayloadLength()) {
+                return;
+              }
             } else if (payloadLength === 126) {
               this.#state = parserStates.PAYLOADLENGTH_16;
             } else if (payloadLength === 127) {
@@ -17244,6 +17256,9 @@ var require_receiver = __commonJS({
             const buffer = this.consume(2);
             this.#info.payloadLength = buffer.readUInt16BE(0);
             this.#state = parserStates.READ_DATA;
+            if (!this.#validatePayloadLength()) {
+              return;
+            }
           } else if (this.#state === parserStates.PAYLOADLENGTH_64) {
             if (this.#byteOffset < 8) {
               return callback();
@@ -17257,6 +17272,9 @@ var require_receiver = __commonJS({
             }
             this.#info.payloadLength = lower;
             this.#state = parserStates.READ_DATA;
+            if (!this.#validatePayloadLength()) {
+              return;
+            }
           } else if (this.#state === parserStates.READ_DATA) {
             if (this.#byteOffset < this.#info.payloadLength) {
               return callback();
@@ -17267,32 +17285,41 @@ var require_receiver = __commonJS({
               this.#state = parserStates.INFO;
             } else {
               if (!this.#info.compressed) {
-                this.#fragments.push(body);
+                this.writeFragments(body);
+                if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
+                  failWebsocketConnection(this.ws, new MessageSizeExceededError().message);
+                  return;
+                }
                 if (!this.#info.fragmented && this.#info.fin) {
-                  const fullMessage = Buffer.concat(this.#fragments);
-                  websocketMessageReceived(this.ws, this.#info.binaryType, fullMessage);
-                  this.#fragments.length = 0;
+                  websocketMessageReceived(this.ws, this.#info.binaryType, this.consumeFragments());
                 }
                 this.#state = parserStates.INFO;
               } else {
-                this.#extensions.get("permessage-deflate").decompress(body, this.#info.fin, (error, data) => {
-                  if (error) {
-                    failWebsocketConnection(this.ws, error.message);
-                    return;
-                  }
-                  this.#fragments.push(data);
-                  if (!this.#info.fin) {
-                    this.#state = parserStates.INFO;
+                this.#extensions.get("permessage-deflate").decompress(
+                  body,
+                  this.#info.fin,
+                  (error, data) => {
+                    if (error) {
+                      failWebsocketConnection(this.ws, error.message);
+                      return;
+                    }
+                    this.writeFragments(data);
+                    if (this.#maxPayloadSize > 0 && this.#fragmentsBytes > this.#maxPayloadSize) {
+                      failWebsocketConnection(this.ws, new MessageSizeExceededError().message);
+                      return;
+                    }
+                    if (!this.#info.fin) {
+                      this.#state = parserStates.INFO;
+                      this.#loop = true;
+                      this.run(callback);
+                      return;
+                    }
+                    websocketMessageReceived(this.ws, this.#info.binaryType, this.consumeFragments());
                     this.#loop = true;
+                    this.#state = parserStates.INFO;
                     this.run(callback);
-                    return;
                   }
-                  websocketMessageReceived(this.ws, this.#info.binaryType, Buffer.concat(this.#fragments));
-                  this.#loop = true;
-                  this.#state = parserStates.INFO;
-                  this.#fragments.length = 0;
-                  this.run(callback);
-                });
+                );
                 this.#loop = false;
                 break;
               }
@@ -17334,6 +17361,21 @@ var require_receiver = __commonJS({
         }
         this.#byteOffset -= n;
         return buffer;
+      }
+      writeFragments(fragment) {
+        this.#fragmentsBytes += fragment.length;
+        this.#fragments.push(fragment);
+      }
+      consumeFragments() {
+        const fragments = this.#fragments;
+        if (fragments.length === 1) {
+          this.#fragmentsBytes = 0;
+          return fragments.shift();
+        }
+        const output = Buffer.concat(fragments, this.#fragmentsBytes);
+        this.#fragments = [];
+        this.#fragmentsBytes = 0;
+        return output;
       }
       parseCloseBody(data) {
         assert(data.length !== 1);
@@ -17772,7 +17814,10 @@ var require_websocket = __commonJS({
        */
       #onConnectionEstablished(response, parsedExtensions) {
         this[kResponse] = response;
-        const parser = new ByteParser(this, parsedExtensions);
+        const maxPayloadSize = this[kController]?.dispatcher?.webSocketOptions?.maxPayloadSize;
+        const parser = new ByteParser(this, parsedExtensions, {
+          maxPayloadSize
+        });
         parser.on("drain", onParserDrain);
         parser.on("error", onParserError.bind(this));
         response.socket.ws = this;
@@ -18580,1798 +18625,6 @@ var require_undici = __commonJS({
     module2.exports.mockErrors = mockErrors;
     var { EventSource } = require_eventsource();
     module2.exports.EventSource = EventSource;
-  }
-});
-
-// node_modules/tslog/cjs/urlToObj.js
-var require_urlToObj = __commonJS({
-  "node_modules/tslog/cjs/urlToObj.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.urlToObject = urlToObject;
-    function urlToObject(url) {
-      return {
-        href: url.href,
-        protocol: url.protocol,
-        username: url.username,
-        password: url.password,
-        host: url.host,
-        hostname: url.hostname,
-        port: url.port,
-        pathname: url.pathname,
-        search: url.search,
-        searchParams: [...url.searchParams].map(([key, value]) => ({ key, value })),
-        hash: url.hash,
-        origin: url.origin
-      };
-    }
-  }
-});
-
-// node_modules/tslog/cjs/prettyLogStyles.js
-var require_prettyLogStyles = __commonJS({
-  "node_modules/tslog/cjs/prettyLogStyles.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.prettyLogStyles = void 0;
-    exports2.prettyLogStyles = {
-      reset: [0, 0],
-      bold: [1, 22],
-      dim: [2, 22],
-      italic: [3, 23],
-      underline: [4, 24],
-      overline: [53, 55],
-      inverse: [7, 27],
-      hidden: [8, 28],
-      strikethrough: [9, 29],
-      black: [30, 39],
-      red: [31, 39],
-      green: [32, 39],
-      yellow: [33, 39],
-      blue: [34, 39],
-      magenta: [35, 39],
-      cyan: [36, 39],
-      white: [37, 39],
-      blackBright: [90, 39],
-      redBright: [91, 39],
-      greenBright: [92, 39],
-      yellowBright: [93, 39],
-      blueBright: [94, 39],
-      magentaBright: [95, 39],
-      cyanBright: [96, 39],
-      whiteBright: [97, 39],
-      bgBlack: [40, 49],
-      bgRed: [41, 49],
-      bgGreen: [42, 49],
-      bgYellow: [43, 49],
-      bgBlue: [44, 49],
-      bgMagenta: [45, 49],
-      bgCyan: [46, 49],
-      bgWhite: [47, 49],
-      bgBlackBright: [100, 49],
-      bgRedBright: [101, 49],
-      bgGreenBright: [102, 49],
-      bgYellowBright: [103, 49],
-      bgBlueBright: [104, 49],
-      bgMagentaBright: [105, 49],
-      bgCyanBright: [106, 49],
-      bgWhiteBright: [107, 49]
-    };
-  }
-});
-
-// node_modules/tslog/cjs/formatTemplate.js
-var require_formatTemplate = __commonJS({
-  "node_modules/tslog/cjs/formatTemplate.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.formatTemplate = formatTemplate;
-    var prettyLogStyles_js_1 = require_prettyLogStyles();
-    function formatTemplate(settings, template, values, hideUnsetPlaceholder = false) {
-      const templateString = String(template);
-      const ansiColorWrap = (placeholderValue, code) => `\x1B[${code[0]}m${placeholderValue}\x1B[${code[1]}m`;
-      const styleWrap = (value, style) => {
-        if (style != null && typeof style === "string") {
-          return ansiColorWrap(value, prettyLogStyles_js_1.prettyLogStyles[style]);
-        } else if (style != null && Array.isArray(style)) {
-          return style.reduce((prevValue, thisStyle) => styleWrap(prevValue, thisStyle), value);
-        } else {
-          if (style != null && style[value.trim()] != null) {
-            return styleWrap(value, style[value.trim()]);
-          } else if (style != null && style["*"] != null) {
-            return styleWrap(value, style["*"]);
-          } else {
-            return value;
-          }
-        }
-      };
-      const defaultStyle = null;
-      return templateString.replace(/{{(.+?)}}/g, (_, placeholder) => {
-        const value = values[placeholder] != null ? String(values[placeholder]) : hideUnsetPlaceholder ? "" : _;
-        return settings.stylePrettyLogs ? styleWrap(value, settings?.prettyLogStyles?.[placeholder] ?? defaultStyle) + ansiColorWrap("", prettyLogStyles_js_1.prettyLogStyles.reset) : value;
-      });
-    }
-  }
-});
-
-// node_modules/tslog/cjs/formatNumberAddZeros.js
-var require_formatNumberAddZeros = __commonJS({
-  "node_modules/tslog/cjs/formatNumberAddZeros.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.formatNumberAddZeros = formatNumberAddZeros;
-    function formatNumberAddZeros(value, digits = 2, addNumber = 0) {
-      if (value != null && isNaN(value)) {
-        return "";
-      }
-      value = value != null ? value + addNumber : value;
-      return digits === 2 ? value == null ? "--" : value < 10 ? "0" + value : value.toString() : value == null ? "---" : value < 10 ? "00" + value : value < 100 ? "0" + value : value.toString();
-    }
-  }
-});
-
-// node_modules/tslog/cjs/internal/metaFormatting.js
-var require_metaFormatting = __commonJS({
-  "node_modules/tslog/cjs/internal/metaFormatting.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.buildPrettyMeta = buildPrettyMeta;
-    var formatTemplate_js_1 = require_formatTemplate();
-    var formatNumberAddZeros_js_1 = require_formatNumberAddZeros();
-    function buildPrettyMeta(settings, meta) {
-      if (meta == null) {
-        return {
-          text: "",
-          template: settings.prettyLogTemplate,
-          placeholders: {}
-        };
-      }
-      let template = settings.prettyLogTemplate;
-      const placeholderValues = {};
-      if (template.includes("{{yyyy}}.{{mm}}.{{dd}} {{hh}}:{{MM}}:{{ss}}:{{ms}}")) {
-        template = template.replace("{{yyyy}}.{{mm}}.{{dd}} {{hh}}:{{MM}}:{{ss}}:{{ms}}", "{{dateIsoStr}}");
-      } else {
-        if (settings.prettyLogTimeZone === "UTC") {
-          placeholderValues["yyyy"] = meta.date?.getUTCFullYear() ?? "----";
-          placeholderValues["mm"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCMonth(), 2, 1);
-          placeholderValues["dd"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCDate(), 2);
-          placeholderValues["hh"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCHours(), 2);
-          placeholderValues["MM"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCMinutes(), 2);
-          placeholderValues["ss"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCSeconds(), 2);
-          placeholderValues["ms"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCMilliseconds(), 3);
-        } else {
-          placeholderValues["yyyy"] = meta.date?.getFullYear() ?? "----";
-          placeholderValues["mm"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getMonth(), 2, 1);
-          placeholderValues["dd"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getDate(), 2);
-          placeholderValues["hh"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getHours(), 2);
-          placeholderValues["MM"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getMinutes(), 2);
-          placeholderValues["ss"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getSeconds(), 2);
-          placeholderValues["ms"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getMilliseconds(), 3);
-        }
-      }
-      const dateInSettingsTimeZone = settings.prettyLogTimeZone === "UTC" ? meta.date : meta.date != null ? new Date(meta.date.getTime() - meta.date.getTimezoneOffset() * 6e4) : void 0;
-      placeholderValues["rawIsoStr"] = dateInSettingsTimeZone?.toISOString() ?? "";
-      placeholderValues["dateIsoStr"] = dateInSettingsTimeZone?.toISOString().replace("T", " ").replace("Z", "") ?? "";
-      placeholderValues["logLevelName"] = meta.logLevelName;
-      placeholderValues["fileNameWithLine"] = meta.path?.fileNameWithLine ?? "";
-      placeholderValues["filePathWithLine"] = meta.path?.filePathWithLine ?? "";
-      placeholderValues["fullFilePath"] = meta.path?.fullFilePath ?? "";
-      let parentNamesString = settings.parentNames?.join(settings.prettyErrorParentNamesSeparator);
-      parentNamesString = parentNamesString != null && meta.name != null ? parentNamesString + settings.prettyErrorParentNamesSeparator : void 0;
-      const combinedName = meta.name != null || parentNamesString != null ? `${parentNamesString ?? ""}${meta.name ?? ""}` : "";
-      placeholderValues["name"] = combinedName;
-      placeholderValues["nameWithDelimiterPrefix"] = combinedName.length > 0 ? settings.prettyErrorLoggerNameDelimiter + combinedName : "";
-      placeholderValues["nameWithDelimiterSuffix"] = combinedName.length > 0 ? combinedName + settings.prettyErrorLoggerNameDelimiter : "";
-      if (settings.overwrite?.addPlaceholders != null) {
-        settings.overwrite.addPlaceholders(meta, placeholderValues);
-      }
-      return {
-        text: (0, formatTemplate_js_1.formatTemplate)(settings, template, placeholderValues),
-        template,
-        placeholders: placeholderValues
-      };
-    }
-  }
-});
-
-// node_modules/tslog/cjs/internal/stackTrace.js
-var require_stackTrace = __commonJS({
-  "node_modules/tslog/cjs/internal/stackTrace.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.splitStackLines = splitStackLines;
-    exports2.sanitizeStackLines = sanitizeStackLines;
-    exports2.toStackFrames = toStackFrames;
-    exports2.findFirstExternalFrameIndex = findFirstExternalFrameIndex;
-    exports2.getFrameAt = getFrameAt;
-    exports2.getCleanStackLines = getCleanStackLines;
-    exports2.buildStackTrace = buildStackTrace;
-    exports2.isIgnorableFrame = isIgnorableFrame;
-    exports2.clampIndex = clampIndex;
-    exports2.pickCallerStackFrame = pickCallerStackFrame;
-    exports2.getDefaultIgnorePatterns = getDefaultIgnorePatterns;
-    var DEFAULT_IGNORE_PATTERNS = [
-      /(?:^|[\\/])node_modules[\\/].*tslog/i,
-      /(?:^|[\\/])deps[\\/].*tslog/i,
-      /tslog[\\/]+src[\\/]+internal[\\/]/i,
-      /tslog[\\/]+src[\\/]BaseLogger/i,
-      /tslog[\\/]+src[\\/]index/i
-    ];
-    function splitStackLines(error) {
-      const stack = typeof error?.stack === "string" ? error.stack : void 0;
-      if (stack == null || stack.length === 0) {
-        return [];
-      }
-      return stack.split("\n").map((line) => line.trimEnd());
-    }
-    function sanitizeStackLines(lines) {
-      return lines.filter((line) => line.length > 0 && !/^\s*Error\b/.test(line));
-    }
-    function toStackFrames(lines, parseLine) {
-      const frames = [];
-      for (const line of lines) {
-        const frame = parseLine(line);
-        if (frame != null) {
-          frames.push(frame);
-        }
-      }
-      return frames;
-    }
-    function findFirstExternalFrameIndex(frames, ignorePatterns = DEFAULT_IGNORE_PATTERNS) {
-      for (let index = 0; index < frames.length; index += 1) {
-        const frame = frames[index];
-        const filePathCandidate = frame.filePath ?? "";
-        const fullPathCandidate = frame.fullFilePath ?? "";
-        if (!ignorePatterns.some((pattern) => pattern.test(filePathCandidate) || pattern.test(fullPathCandidate))) {
-          return index;
-        }
-      }
-      return 0;
-    }
-    function getFrameAt(frames, index) {
-      if (index < 0 || index >= frames.length) {
-        return void 0;
-      }
-      return frames[index];
-    }
-    function getCleanStackLines(error) {
-      return sanitizeStackLines(splitStackLines(error));
-    }
-    function buildStackTrace(error, parseLine) {
-      return toStackFrames(getCleanStackLines(error), parseLine);
-    }
-    function isIgnorableFrame(frame, ignorePatterns) {
-      const filePathCandidate = frame.filePath ?? "";
-      const fullPathCandidate = frame.fullFilePath ?? "";
-      return ignorePatterns.some((pattern) => pattern.test(filePathCandidate) || pattern.test(fullPathCandidate));
-    }
-    function clampIndex(index, maxExclusive) {
-      if (index < 0) {
-        return 0;
-      }
-      if (index >= maxExclusive) {
-        return Math.max(0, maxExclusive - 1);
-      }
-      return index;
-    }
-    function pickCallerStackFrame(error, parseLine, options = {}) {
-      const lines = getCleanStackLines(error);
-      const frames = toStackFrames(lines, parseLine);
-      if (frames.length === 0) {
-        return void 0;
-      }
-      const ignorePatterns = options.ignorePatterns ?? DEFAULT_IGNORE_PATTERNS;
-      const autoIndex = findFirstExternalFrameIndex(frames, ignorePatterns);
-      const resolvedIndex = options.stackDepthLevel != null ? options.stackDepthLevel : autoIndex;
-      return getFrameAt(frames, clampIndex(resolvedIndex, frames.length));
-    }
-    function getDefaultIgnorePatterns() {
-      return [...DEFAULT_IGNORE_PATTERNS];
-    }
-  }
-});
-
-// node_modules/tslog/cjs/internal/errorUtils.js
-var require_errorUtils = __commonJS({
-  "node_modules/tslog/cjs/internal/errorUtils.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.collectErrorCauses = collectErrorCauses;
-    exports2.toError = toError;
-    exports2.toErrorObject = toErrorObject;
-    var stackTrace_js_1 = require_stackTrace();
-    var DEFAULT_CAUSE_DEPTH = 5;
-    function collectErrorCauses(error, options = {}) {
-      const maxDepth = options.maxDepth ?? DEFAULT_CAUSE_DEPTH;
-      const causes = [];
-      const visited = /* @__PURE__ */ new Set();
-      let current = error;
-      let depth = 0;
-      while (current != null && depth < maxDepth) {
-        const cause = current?.cause;
-        if (cause == null || visited.has(cause)) {
-          break;
-        }
-        visited.add(cause);
-        causes.push(toError(cause));
-        current = cause;
-        depth += 1;
-      }
-      return causes;
-    }
-    function toError(value) {
-      if (value instanceof Error) {
-        return value;
-      }
-      const error = new Error(typeof value === "string" ? value : JSON.stringify(value));
-      if (typeof value === "object" && value != null) {
-        Object.assign(error, value);
-      }
-      return error;
-    }
-    function toErrorObject(error, parseLine) {
-      return {
-        nativeError: error,
-        name: error.name ?? "Error",
-        message: error.message ?? "",
-        stack: (0, stackTrace_js_1.buildStackTrace)(error, parseLine)
-      };
-    }
-  }
-});
-
-// node_modules/tslog/cjs/internal/jsonStringifyRecursive.js
-var require_jsonStringifyRecursive = __commonJS({
-  "node_modules/tslog/cjs/internal/jsonStringifyRecursive.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.jsonStringifyRecursive = jsonStringifyRecursive;
-    function jsonStringifyRecursive(obj) {
-      const cache = /* @__PURE__ */ new Set();
-      return JSON.stringify(obj, (key, value) => {
-        if (typeof value === "object" && value !== null) {
-          if (cache.has(value)) {
-            return "[Circular]";
-          }
-          cache.add(value);
-        }
-        if (typeof value === "bigint") {
-          return `${value}`;
-        }
-        if (typeof value === "undefined") {
-          return "[undefined]";
-        }
-        return value;
-      });
-    }
-  }
-});
-
-// node_modules/tslog/cjs/internal/util.inspect.polyfill.js
-var require_util_inspect_polyfill = __commonJS({
-  "node_modules/tslog/cjs/internal/util.inspect.polyfill.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.inspect = inspect;
-    exports2.formatValue = formatValue;
-    exports2.formatWithOptions = formatWithOptions;
-    var prettyLogStyles_js_1 = require_prettyLogStyles();
-    var jsonStringifyRecursive_js_1 = require_jsonStringifyRecursive();
-    function inspect(obj, opts) {
-      const ctx = {
-        seen: [],
-        stylize: stylizeNoColor
-      };
-      if (opts != null) {
-        _extend(ctx, opts);
-      }
-      if (isUndefined(ctx.showHidden))
-        ctx.showHidden = false;
-      if (isUndefined(ctx.depth))
-        ctx.depth = 2;
-      if (isUndefined(ctx.colors))
-        ctx.colors = true;
-      if (isUndefined(ctx.customInspect))
-        ctx.customInspect = true;
-      if (ctx.colors)
-        ctx.stylize = stylizeWithColor;
-      return formatValue(ctx, obj, ctx.depth);
-    }
-    inspect.colors = prettyLogStyles_js_1.prettyLogStyles;
-    inspect.styles = {
-      special: "cyan",
-      number: "yellow",
-      boolean: "yellow",
-      undefined: "grey",
-      null: "bold",
-      string: "green",
-      date: "magenta",
-      regexp: "red"
-    };
-    function isBoolean(arg) {
-      return typeof arg === "boolean";
-    }
-    function isUndefined(arg) {
-      return arg === void 0;
-    }
-    function stylizeNoColor(str) {
-      return str;
-    }
-    function stylizeWithColor(str, styleType) {
-      const style = inspect.styles[styleType];
-      if (style != null && inspect?.colors?.[style]?.[0] != null && inspect?.colors?.[style]?.[1] != null) {
-        return "\x1B[" + inspect.colors[style][0] + "m" + str + "\x1B[" + inspect.colors[style][1] + "m";
-      } else {
-        return str;
-      }
-    }
-    function isFunction(arg) {
-      return typeof arg === "function";
-    }
-    function isString(arg) {
-      return typeof arg === "string";
-    }
-    function isNumber(arg) {
-      return typeof arg === "number";
-    }
-    function isNull(arg) {
-      return arg === null;
-    }
-    function hasOwn(obj, prop) {
-      return Object.prototype.hasOwnProperty.call(obj, prop);
-    }
-    function isRegExp(re) {
-      return isObject(re) && objectToString(re) === "[object RegExp]";
-    }
-    function isObject(arg) {
-      return typeof arg === "object" && arg !== null;
-    }
-    function isError(e) {
-      return isObject(e) && (objectToString(e) === "[object Error]" || e instanceof Error);
-    }
-    function isDate(d) {
-      return isObject(d) && objectToString(d) === "[object Date]";
-    }
-    function objectToString(o) {
-      return Object.prototype.toString.call(o);
-    }
-    function arrayToHash(array) {
-      const hash = {};
-      array.forEach((val) => {
-        hash[val] = true;
-      });
-      return hash;
-    }
-    function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
-      const output = [];
-      for (let i = 0, l = value.length; i < l; ++i) {
-        if (hasOwn(value, String(i))) {
-          output.push(formatProperty(ctx, value, recurseTimes, visibleKeys, String(i), true));
-        } else {
-          output.push("");
-        }
-      }
-      keys.forEach((key) => {
-        if (!key.match(/^\d+$/)) {
-          output.push(formatProperty(ctx, value, recurseTimes, visibleKeys, key, true));
-        }
-      });
-      return output;
-    }
-    function formatError(value) {
-      return "[" + Error.prototype.toString.call(value) + "]";
-    }
-    function formatValue(ctx, value, recurseTimes = 0) {
-      if (ctx.customInspect && value != null && isFunction(value) && value?.inspect !== inspect && !(value?.constructor && value?.constructor.prototype === value)) {
-        if (typeof value.inspect !== "function" && value.toString != null) {
-          return value.toString();
-        }
-        let ret = value?.inspect(recurseTimes, ctx);
-        if (!isString(ret)) {
-          ret = formatValue(ctx, ret, recurseTimes);
-        }
-        return ret;
-      }
-      const primitive = formatPrimitive(ctx, value);
-      if (primitive) {
-        return primitive;
-      }
-      let keys = Object.keys(value);
-      const visibleKeys = arrayToHash(keys);
-      try {
-        if (ctx.showHidden && Object.getOwnPropertyNames) {
-          keys = Object.getOwnPropertyNames(value);
-        }
-      } catch {
-      }
-      if (isError(value) && (keys.indexOf("message") >= 0 || keys.indexOf("description") >= 0)) {
-        return formatError(value);
-      }
-      if (keys.length === 0) {
-        if (isFunction(ctx.stylize)) {
-          if (isFunction(value)) {
-            const name = value.name ? ": " + value.name : "";
-            return ctx.stylize("[Function" + name + "]", "special");
-          }
-          if (isRegExp(value)) {
-            return ctx.stylize(RegExp.prototype.toString.call(value), "regexp");
-          }
-          if (isDate(value)) {
-            return ctx.stylize(Date.prototype.toISOString.call(value), "date");
-          }
-          if (isError(value)) {
-            return formatError(value);
-          }
-        } else {
-          return value;
-        }
-      }
-      let base = "";
-      let array = false;
-      let braces = ["{\n", "\n}"];
-      if (Array.isArray(value)) {
-        array = true;
-        braces = ["[\n", "\n]"];
-      }
-      if (isFunction(value)) {
-        const n = value.name ? ": " + value.name : "";
-        base = " [Function" + n + "]";
-      }
-      if (isRegExp(value)) {
-        base = " " + RegExp.prototype.toString.call(value);
-      }
-      if (isDate(value)) {
-        base = " " + Date.prototype.toUTCString.call(value);
-      }
-      if (isError(value)) {
-        base = " " + formatError(value);
-      }
-      if (keys.length === 0 && (!array || value.length == 0)) {
-        return braces[0] + base + braces[1];
-      }
-      if (recurseTimes < 0) {
-        if (isRegExp(value)) {
-          return ctx.stylize(RegExp.prototype.toString.call(value), "regexp");
-        } else {
-          return ctx.stylize("[Object]", "special");
-        }
-      }
-      ctx.seen.push(value);
-      let output;
-      if (array) {
-        output = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
-      } else {
-        output = keys.map((key) => {
-          return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array);
-        });
-      }
-      ctx.seen.pop();
-      return reduceToSingleString(output, base, braces);
-    }
-    function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array) {
-      let name, str;
-      let desc = { value: void 0 };
-      try {
-        desc.value = value[key];
-      } catch {
-      }
-      try {
-        if (Object.getOwnPropertyDescriptor) {
-          desc = Object.getOwnPropertyDescriptor(value, key) || desc;
-        }
-      } catch {
-      }
-      if (desc.get) {
-        if (desc.set) {
-          str = ctx.stylize("[Getter/Setter]", "special");
-        } else {
-          str = ctx.stylize("[Getter]", "special");
-        }
-      } else {
-        if (desc.set) {
-          str = ctx.stylize("[Setter]", "special");
-        }
-      }
-      if (!hasOwn(visibleKeys, key)) {
-        name = "[" + key + "]";
-      }
-      if (!str) {
-        if (ctx.seen.indexOf(desc.value) < 0) {
-          if (isNull(recurseTimes)) {
-            str = formatValue(ctx, desc.value, void 0);
-          } else {
-            str = formatValue(ctx, desc.value, recurseTimes - 1);
-          }
-          if (str.indexOf("\n") > -1) {
-            if (array) {
-              str = str.split("\n").map((line) => {
-                return "  " + line;
-              }).join("\n").substr(2);
-            } else {
-              str = "\n" + str.split("\n").map((line) => {
-                return "   " + line;
-              }).join("\n");
-            }
-          }
-        } else {
-          str = ctx.stylize("[Circular]", "special");
-        }
-      }
-      if (isUndefined(name)) {
-        if (array && key.match(/^\d+$/)) {
-          return str;
-        }
-        name = JSON.stringify("" + key);
-        if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
-          name = name.substr(1, name.length - 2);
-          name = ctx.stylize(name, "name");
-        } else {
-          name = name.replace(/'/g, "\\'").replace(/\\"/g, "\\'").replace(/(^"|"$)/g, "'");
-          name = ctx.stylize(name, "string");
-        }
-      }
-      return name + ": " + str;
-    }
-    function formatPrimitive(ctx, value) {
-      if (isUndefined(value))
-        return ctx.stylize("undefined", "undefined");
-      if (isString(value)) {
-        const simple = "'" + JSON.stringify(value).replace(/^"|"$/g, "").replace(/'/g, "\\'").replace(/\\"/g, "\\'") + "'";
-        return ctx.stylize(simple, "string");
-      }
-      if (isNumber(value))
-        return ctx.stylize("" + value, "number");
-      if (isBoolean(value))
-        return ctx.stylize("" + value, "boolean");
-      if (isNull(value))
-        return ctx.stylize("null", "null");
-    }
-    function reduceToSingleString(output, base, braces) {
-      return braces[0] + (base === "" ? "" : base + "\n") + "  " + output.join(",\n  ") + " " + braces[1];
-    }
-    function _extend(origin, add) {
-      const typedOrigin = { ...origin };
-      if (!add || !isObject(add))
-        return origin;
-      const clonedAdd = { ...add };
-      const keys = Object.keys(add);
-      let i = keys.length;
-      while (i--) {
-        typedOrigin[keys[i]] = clonedAdd[keys[i]];
-      }
-      return typedOrigin;
-    }
-    function formatWithOptions(inspectOptions, ...args) {
-      const ctx = {
-        seen: [],
-        stylize: stylizeNoColor
-      };
-      if (inspectOptions != null) {
-        _extend(ctx, inspectOptions);
-      }
-      const first = args[0];
-      let a = 0;
-      let str = "";
-      let join = "";
-      if (typeof first === "string") {
-        if (args.length === 1) {
-          return first;
-        }
-        let tempStr;
-        let lastPos = 0;
-        for (let i = 0; i < first.length - 1; i++) {
-          if (first.charCodeAt(i) === 37) {
-            const nextChar = first.charCodeAt(++i);
-            if (a + 1 !== args.length) {
-              switch (nextChar) {
-                case 115: {
-                  const tempArg = args[++a];
-                  if (typeof tempArg === "number") {
-                    tempStr = formatPrimitive(ctx, tempArg);
-                  } else if (typeof tempArg === "bigint") {
-                    tempStr = formatPrimitive(ctx, tempArg);
-                  } else if (typeof tempArg !== "object" || tempArg === null) {
-                    tempStr = String(tempArg);
-                  } else {
-                    tempStr = inspect(tempArg, {
-                      ...inspectOptions,
-                      compact: 3,
-                      colors: false,
-                      depth: 0
-                    });
-                  }
-                  break;
-                }
-                case 106:
-                  tempStr = (0, jsonStringifyRecursive_js_1.jsonStringifyRecursive)(args[++a]);
-                  break;
-                case 100: {
-                  const tempNum = args[++a];
-                  if (typeof tempNum === "bigint") {
-                    tempStr = formatPrimitive(ctx, tempNum);
-                  } else if (typeof tempNum === "symbol") {
-                    tempStr = "NaN";
-                  } else {
-                    tempStr = formatPrimitive(ctx, tempNum);
-                  }
-                  break;
-                }
-                case 79:
-                  tempStr = inspect(args[++a], inspectOptions);
-                  break;
-                case 111:
-                  tempStr = inspect(args[++a], {
-                    ...inspectOptions,
-                    showHidden: true,
-                    showProxy: true,
-                    depth: 4
-                  });
-                  break;
-                case 105: {
-                  const tempInteger = args[++a];
-                  if (typeof tempInteger === "bigint") {
-                    tempStr = formatPrimitive(ctx, tempInteger);
-                  } else if (typeof tempInteger === "symbol") {
-                    tempStr = "NaN";
-                  } else {
-                    tempStr = formatPrimitive(ctx, parseInt(tempStr));
-                  }
-                  break;
-                }
-                case 102: {
-                  const tempFloat = args[++a];
-                  if (typeof tempFloat === "symbol") {
-                    tempStr = "NaN";
-                  } else {
-                    tempStr = formatPrimitive(ctx, parseInt(tempFloat));
-                  }
-                  break;
-                }
-                case 99:
-                  a += 1;
-                  tempStr = "";
-                  break;
-                case 37:
-                  str += first.slice(lastPos, i);
-                  lastPos = i + 1;
-                  continue;
-                default:
-                  continue;
-              }
-              if (lastPos !== i - 1) {
-                str += first.slice(lastPos, i - 1);
-              }
-              str += tempStr;
-              lastPos = i + 1;
-            } else if (nextChar === 37) {
-              str += first.slice(lastPos, i);
-              lastPos = i + 1;
-            }
-          }
-        }
-        if (lastPos !== 0) {
-          a++;
-          join = " ";
-          if (lastPos < first.length) {
-            str += first.slice(lastPos);
-          }
-        }
-      }
-      while (a < args.length) {
-        const value = args[a];
-        str += join;
-        str += typeof value !== "string" ? inspect(value, inspectOptions) : value;
-        join = " ";
-        a++;
-      }
-      return str;
-    }
-  }
-});
-
-// node_modules/tslog/cjs/internal/environment.js
-var require_environment = __commonJS({
-  "node_modules/tslog/cjs/internal/environment.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.safeGetCwd = safeGetCwd;
-    exports2.isBrowserEnvironment = isBrowserEnvironment;
-    exports2.consoleSupportsCssStyling = consoleSupportsCssStyling;
-    function safeGetCwd() {
-      try {
-        const nodeProcess = globalThis?.process;
-        if (typeof nodeProcess?.cwd === "function") {
-          return nodeProcess.cwd();
-        }
-      } catch {
-      }
-      try {
-        const deno = globalThis?.["Deno"];
-        if (typeof deno?.cwd === "function") {
-          return deno.cwd();
-        }
-      } catch {
-      }
-      return void 0;
-    }
-    function isBrowserEnvironment() {
-      return typeof window !== "undefined" && typeof document !== "undefined";
-    }
-    function consoleSupportsCssStyling() {
-      if (!isBrowserEnvironment()) {
-        return false;
-      }
-      const navigatorObj = globalThis?.navigator;
-      const userAgent = navigatorObj?.userAgent ?? "";
-      if (/firefox/i.test(userAgent)) {
-        return true;
-      }
-      const windowObj = globalThis;
-      if (windowObj?.CSS?.supports?.("color", "#000")) {
-        return true;
-      }
-      return /safari/i.test(userAgent) && !/chrome/i.test(userAgent);
-    }
-  }
-});
-
-// node_modules/tslog/cjs/interfaces.js
-var require_interfaces = __commonJS({
-  "node_modules/tslog/cjs/interfaces.js"(exports2) {
-    "use strict";
-    Object.defineProperty(exports2, "__esModule", { value: true });
-  }
-});
-
-// node_modules/tslog/cjs/BaseLogger.js
-var require_BaseLogger = __commonJS({
-  "node_modules/tslog/cjs/BaseLogger.js"(exports2) {
-    "use strict";
-    var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
-      if (k2 === void 0) k2 = k;
-      var desc = Object.getOwnPropertyDescriptor(m, k);
-      if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-        desc = { enumerable: true, get: function() {
-          return m[k];
-        } };
-      }
-      Object.defineProperty(o, k2, desc);
-    }) : (function(o, m, k, k2) {
-      if (k2 === void 0) k2 = k;
-      o[k2] = m[k];
-    }));
-    var __exportStar = exports2 && exports2.__exportStar || function(m, exports3) {
-      for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports3, p)) __createBinding(exports3, m, p);
-    };
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.BaseLogger = exports2.loggerEnvironment = void 0;
-    exports2.createLoggerEnvironment = createLoggerEnvironment;
-    var urlToObj_js_1 = require_urlToObj();
-    var metaFormatting_js_1 = require_metaFormatting();
-    var errorUtils_js_1 = require_errorUtils();
-    var formatTemplate_js_1 = require_formatTemplate();
-    var util_inspect_polyfill_js_1 = require_util_inspect_polyfill();
-    var stackTrace_js_1 = require_stackTrace();
-    var environment_js_1 = require_environment();
-    var jsonStringifyRecursive_js_1 = require_jsonStringifyRecursive();
-    function createLoggerEnvironment() {
-      const runtimeInfo = detectRuntimeInfo();
-      const meta = createRuntimeMeta(runtimeInfo);
-      const usesBrowserStack = runtimeInfo.name === "browser" || runtimeInfo.name === "worker";
-      const callerIgnorePatterns = usesBrowserStack ? [...(0, stackTrace_js_1.getDefaultIgnorePatterns)(), /node_modules[\\/].*tslog/i] : [...(0, stackTrace_js_1.getDefaultIgnorePatterns)(), /node:(?:internal|vm)/i, /\binternal[\\/]/i];
-      let cachedCwd;
-      const environment = {
-        getMeta(logLevelId, logLevelName, stackDepthLevel, hideLogPositionForPerformance, name, parentNames) {
-          return Object.assign({}, meta, {
-            name,
-            parentNames,
-            date: /* @__PURE__ */ new Date(),
-            logLevelId,
-            logLevelName,
-            path: !hideLogPositionForPerformance ? environment.getCallerStackFrame(stackDepthLevel) : void 0
-          });
-        },
-        getCallerStackFrame(stackDepthLevel, error = new Error()) {
-          const frames = (0, stackTrace_js_1.buildStackTrace)(error, (line) => parseStackLine(line));
-          if (frames.length === 0) {
-            return {};
-          }
-          const autoIndex = (0, stackTrace_js_1.findFirstExternalFrameIndex)(frames, callerIgnorePatterns);
-          const useManualIndex = Number.isFinite(stackDepthLevel) && stackDepthLevel >= 0;
-          const resolvedIndex = useManualIndex ? (0, stackTrace_js_1.clampIndex)(stackDepthLevel, frames.length) : (0, stackTrace_js_1.clampIndex)(autoIndex, frames.length);
-          return frames[resolvedIndex] ?? {};
-        },
-        getErrorTrace(error) {
-          return (0, stackTrace_js_1.buildStackTrace)(error, (line) => parseStackLine(line));
-        },
-        isError(value) {
-          return isNativeError(value);
-        },
-        isBuffer(value) {
-          return typeof Buffer !== "undefined" && typeof Buffer.isBuffer === "function" ? Buffer.isBuffer(value) : false;
-        },
-        prettyFormatLogObj(maskedArgs, settings) {
-          return maskedArgs.reduce((result, arg) => {
-            if (environment.isError(arg)) {
-              result.errors.push(environment.prettyFormatErrorObj(arg, settings));
-            } else {
-              result.args.push(arg);
-            }
-            return result;
-          }, { args: [], errors: [] });
-        },
-        prettyFormatErrorObj(error, settings) {
-          const stackLines = formatStackFrames(environment.getErrorTrace(error), settings);
-          const causeSections = (0, errorUtils_js_1.collectErrorCauses)(error).map((cause, index) => {
-            const header = `Caused by (${index + 1}): ${cause.name ?? "Error"}${cause.message ? `: ${cause.message}` : ""}`;
-            const frames = formatStackFrames((0, stackTrace_js_1.buildStackTrace)(cause, (line) => parseStackLine(line)), settings);
-            return [header, ...frames].join("\n");
-          });
-          const placeholderValuesError = {
-            errorName: ` ${error.name} `,
-            errorMessage: formatErrorMessage(error),
-            errorStack: [...stackLines, ...causeSections].join("\n")
-          };
-          return (0, formatTemplate_js_1.formatTemplate)(settings, settings.prettyErrorTemplate, placeholderValuesError);
-        },
-        transportFormatted(logMetaMarkup, logArgs, logErrors, logMeta, settings) {
-          const prettyLogs = settings.stylePrettyLogs !== false;
-          const logErrorsStr = (logErrors.length > 0 && logArgs.length > 0 ? "\n" : "") + logErrors.join("\n");
-          const sanitizedMetaMarkup = stripAnsi(logMetaMarkup);
-          const metaMarkupForText = prettyLogs ? logMetaMarkup : sanitizedMetaMarkup;
-          if (shouldUseCss(prettyLogs)) {
-            settings.prettyInspectOptions.colors = false;
-            const formattedArgs2 = formatWithOptionsSafe(settings.prettyInspectOptions, logArgs);
-            const cssMeta = logMeta != null ? buildCssMetaOutput(settings, logMeta) : { text: sanitizedMetaMarkup, styles: [] };
-            const hasCssMeta = cssMeta.text.length > 0 && cssMeta.styles.length > 0;
-            const metaOutput = hasCssMeta ? cssMeta.text : sanitizedMetaMarkup;
-            const output = metaOutput + formattedArgs2 + logErrorsStr;
-            if (hasCssMeta) {
-              console.log(output, ...cssMeta.styles);
-            } else {
-              console.log(output);
-            }
-            return;
-          }
-          settings.prettyInspectOptions.colors = prettyLogs;
-          const formattedArgs = formatWithOptionsSafe(settings.prettyInspectOptions, logArgs);
-          console.log(metaMarkupForText + formattedArgs + logErrorsStr);
-        },
-        transportJSON(json) {
-          console.log((0, jsonStringifyRecursive_js_1.jsonStringifyRecursive)(json));
-        }
-      };
-      if (getNodeEnv() === "test") {
-        environment.__resetWorkingDirectoryCacheForTests = () => {
-          cachedCwd = void 0;
-        };
-      }
-      return environment;
-      function parseStackLine(line) {
-        return usesBrowserStack ? parseBrowserStackLine(line) : parseServerStackLine(line);
-      }
-      function parseServerStackLine(rawLine) {
-        if (typeof rawLine !== "string" || rawLine.length === 0) {
-          return void 0;
-        }
-        const trimmedLine = rawLine.trim();
-        if (!trimmedLine.includes(" at ") && !trimmedLine.startsWith("at ")) {
-          return void 0;
-        }
-        const line = trimmedLine.replace(/^at\s+/, "");
-        let method;
-        let location = line;
-        const methodMatch = line.match(/^(.*?)\s+\((.*)\)$/);
-        if (methodMatch) {
-          method = methodMatch[1];
-          location = methodMatch[2];
-        }
-        const sanitizedLocation = location.replace(/^\(/, "").replace(/\)$/, "");
-        const withoutQuery = sanitizedLocation.replace(/\?.*$/, "");
-        let fileLine;
-        let fileColumn;
-        let filePathCandidate = withoutQuery;
-        const segments = withoutQuery.split(":");
-        if (segments.length >= 3 && /^\d+$/.test(segments[segments.length - 1] ?? "")) {
-          fileColumn = segments.pop();
-          fileLine = segments.pop();
-          filePathCandidate = segments.join(":");
-        } else if (segments.length >= 2 && /^\d+$/.test(segments[segments.length - 1] ?? "")) {
-          fileLine = segments.pop();
-          filePathCandidate = segments.join(":");
-        }
-        let normalizedPath = filePathCandidate.replace(/^file:\/\//, "");
-        const cwd = getWorkingDirectory();
-        if (cwd != null && normalizedPath.startsWith(cwd)) {
-          normalizedPath = normalizedPath.slice(cwd.length);
-          normalizedPath = normalizedPath.replace(/^[\\/]/, "");
-        }
-        if (normalizedPath.length === 0) {
-          normalizedPath = filePathCandidate;
-        }
-        const normalizedPathWithoutLine = normalizeFilePath(normalizedPath);
-        const effectivePath = normalizedPathWithoutLine.length > 0 ? normalizedPathWithoutLine : normalizedPath;
-        const pathSegments = effectivePath.split(/\\|\//);
-        const fileName = pathSegments[pathSegments.length - 1];
-        const fileNameWithLine = fileName && fileLine ? `${fileName}:${fileLine}` : void 0;
-        const filePathWithLine = effectivePath && fileLine ? `${effectivePath}:${fileLine}` : void 0;
-        return {
-          fullFilePath: sanitizedLocation,
-          fileName,
-          fileNameWithLine,
-          fileColumn,
-          fileLine,
-          filePath: effectivePath,
-          filePathWithLine,
-          method
-        };
-      }
-      function parseBrowserStackLine(line) {
-        const href = globalThis.location?.origin;
-        if (line == null) {
-          return void 0;
-        }
-        const match = line.match(BROWSER_PATH_REGEX);
-        if (!match) {
-          return void 0;
-        }
-        const filePath = match[1]?.replace(/\?.*$/, "");
-        if (filePath == null) {
-          return void 0;
-        }
-        const pathParts = filePath.split("/");
-        const fileLine = match[2];
-        const fileColumn = match[3];
-        const fileName = pathParts[pathParts.length - 1];
-        return {
-          fullFilePath: href ? `${href}${filePath}` : filePath,
-          fileName,
-          fileNameWithLine: fileName && fileLine ? `${fileName}:${fileLine}` : void 0,
-          fileColumn,
-          fileLine,
-          filePath,
-          filePathWithLine: fileLine ? `${filePath}:${fileLine}` : void 0,
-          method: void 0
-        };
-      }
-      function formatStackFrames(frames, settings) {
-        return frames.map((stackFrame) => (0, formatTemplate_js_1.formatTemplate)(settings, settings.prettyErrorStackTemplate, { ...stackFrame }, true));
-      }
-      function formatErrorMessage(error) {
-        return Object.getOwnPropertyNames(error).filter((key) => key !== "stack" && key !== "cause").reduce((result, key) => {
-          const value = error[key];
-          if (typeof value === "function") {
-            return result;
-          }
-          result.push(String(value));
-          return result;
-        }, []).join(", ");
-      }
-      function shouldUseCss(prettyLogs) {
-        return prettyLogs && (runtimeInfo.name === "browser" || runtimeInfo.name === "worker") && (0, environment_js_1.consoleSupportsCssStyling)();
-      }
-      function stripAnsi(value) {
-        return value.replace(ANSI_REGEX, "");
-      }
-      function buildCssMetaOutput(settings, metaValue) {
-        if (metaValue == null) {
-          return { text: "", styles: [] };
-        }
-        const { template, placeholders } = (0, metaFormatting_js_1.buildPrettyMeta)(settings, metaValue);
-        const parts = [];
-        const styles = [];
-        let lastIndex = 0;
-        const placeholderRegex = /{{(.+?)}}/g;
-        let match;
-        while ((match = placeholderRegex.exec(template)) != null) {
-          if (match.index > lastIndex) {
-            parts.push(template.slice(lastIndex, match.index));
-          }
-          const key = match[1];
-          const rawValue = placeholders[key] != null ? String(placeholders[key]) : "";
-          const tokens = collectStyleTokens(settings.prettyLogStyles?.[key], rawValue);
-          const css = tokensToCss(tokens);
-          if (css.length > 0) {
-            parts.push(`%c${rawValue}%c`);
-            styles.push(css, "");
-          } else {
-            parts.push(rawValue);
-          }
-          lastIndex = placeholderRegex.lastIndex;
-        }
-        if (lastIndex < template.length) {
-          parts.push(template.slice(lastIndex));
-        }
-        return {
-          text: parts.join(""),
-          styles
-        };
-      }
-      function collectStyleTokens(style, value) {
-        if (style == null) {
-          return [];
-        }
-        if (typeof style === "string") {
-          return [style];
-        }
-        if (Array.isArray(style)) {
-          return style.flatMap((token) => collectStyleTokens(token, value));
-        }
-        if (typeof style === "object") {
-          const normalizedValue = value.trim();
-          const nextStyle = style[normalizedValue] ?? style["*"];
-          if (nextStyle == null) {
-            return [];
-          }
-          return collectStyleTokens(nextStyle, value);
-        }
-        return [];
-      }
-      function tokensToCss(tokens) {
-        const seen = /* @__PURE__ */ new Set();
-        const cssParts = [];
-        for (const token of tokens) {
-          const css = styleTokenToCss(token);
-          if (css != null && css.length > 0 && !seen.has(css)) {
-            seen.add(css);
-            cssParts.push(css);
-          }
-        }
-        return cssParts.join("; ");
-      }
-      function styleTokenToCss(token) {
-        const color = COLOR_TOKENS[token];
-        if (color != null) {
-          return `color: ${color}`;
-        }
-        const background = BACKGROUND_TOKENS[token];
-        if (background != null) {
-          return `background-color: ${background}`;
-        }
-        switch (token) {
-          case "bold":
-            return "font-weight: bold";
-          case "dim":
-            return "opacity: 0.75";
-          case "italic":
-            return "font-style: italic";
-          case "underline":
-            return "text-decoration: underline";
-          case "overline":
-            return "text-decoration: overline";
-          case "inverse":
-            return "filter: invert(1)";
-          case "hidden":
-            return "visibility: hidden";
-          case "strikethrough":
-            return "text-decoration: line-through";
-          default:
-            return void 0;
-        }
-      }
-      function getWorkingDirectory() {
-        if (cachedCwd === void 0) {
-          cachedCwd = (0, environment_js_1.safeGetCwd)() ?? null;
-        }
-        return cachedCwd ?? void 0;
-      }
-      function shouldCaptureHostname() {
-        return runtimeInfo.name === "node" || runtimeInfo.name === "deno" || runtimeInfo.name === "bun";
-      }
-      function shouldCaptureRuntimeVersion() {
-        return runtimeInfo.name === "node" || runtimeInfo.name === "deno" || runtimeInfo.name === "bun";
-      }
-      function createRuntimeMeta(info) {
-        if (info.name === "browser" || info.name === "worker") {
-          return {
-            runtime: info.name,
-            browser: info.userAgent
-          };
-        }
-        const metaStatic = {
-          runtime: info.name
-        };
-        if (shouldCaptureRuntimeVersion()) {
-          metaStatic.runtimeVersion = info.version ?? "unknown";
-        }
-        if (shouldCaptureHostname()) {
-          metaStatic.hostname = info.hostname ?? "unknown";
-        }
-        return metaStatic;
-      }
-      function formatWithOptionsSafe(options, args) {
-        try {
-          return (0, util_inspect_polyfill_js_1.formatWithOptions)(options, ...args);
-        } catch {
-          return args.map(stringifyFallback).join(" ");
-        }
-      }
-      function stringifyFallback(value) {
-        if (typeof value === "string") {
-          return value;
-        }
-        try {
-          return JSON.stringify(value);
-        } catch {
-          return String(value);
-        }
-      }
-      function normalizeFilePath(value) {
-        if (typeof value !== "string" || value.length === 0) {
-          return value;
-        }
-        const replaced = value.replace(/\\+/g, "\\").replace(/\\/g, "/");
-        const hasRootDoubleSlash = replaced.startsWith("//");
-        const hasLeadingSlash = replaced.startsWith("/") && !hasRootDoubleSlash;
-        const driveMatch = replaced.match(/^[A-Za-z]:/);
-        const drivePrefix = driveMatch ? driveMatch[0] : "";
-        const withoutDrive = drivePrefix ? replaced.slice(drivePrefix.length) : replaced;
-        const segments = withoutDrive.split("/");
-        const normalizedSegments = [];
-        for (const segment of segments) {
-          if (segment === "" || segment === ".") {
-            continue;
-          }
-          if (segment === "..") {
-            if (normalizedSegments.length > 0) {
-              normalizedSegments.pop();
-            }
-            continue;
-          }
-          normalizedSegments.push(segment);
-        }
-        let normalized = normalizedSegments.join("/");
-        if (hasRootDoubleSlash) {
-          normalized = `//${normalized}`;
-        } else if (hasLeadingSlash) {
-          normalized = `/${normalized}`;
-        } else if (drivePrefix !== "") {
-          normalized = `${drivePrefix}${normalized.length > 0 ? `/${normalized}` : ""}`;
-        }
-        if (normalized.length === 0) {
-          return value;
-        }
-        return normalized;
-      }
-      function detectRuntimeInfo() {
-        if ((0, environment_js_1.isBrowserEnvironment)()) {
-          const navigatorObj = globalThis.navigator;
-          return {
-            name: "browser",
-            userAgent: navigatorObj?.userAgent
-          };
-        }
-        const globalScope = globalThis;
-        if (typeof globalScope.importScripts === "function") {
-          return {
-            name: "worker",
-            userAgent: globalScope.navigator?.userAgent
-          };
-        }
-        const globalAny = globalThis;
-        if (globalAny.Bun != null) {
-          const bunVersion = globalAny.Bun.version;
-          return {
-            name: "bun",
-            version: bunVersion != null ? `bun/${bunVersion}` : void 0,
-            hostname: getEnvironmentHostname(globalAny.process, globalAny.Deno, globalAny.Bun, globalAny.location)
-          };
-        }
-        if (globalAny.Deno != null) {
-          const denoHostname = resolveDenoHostname(globalAny.Deno);
-          const denoVersion = globalAny.Deno?.version?.deno;
-          return {
-            name: "deno",
-            version: denoVersion != null ? `deno/${denoVersion}` : void 0,
-            hostname: denoHostname ?? getEnvironmentHostname(globalAny.process, globalAny.Deno, globalAny.Bun, globalAny.location)
-          };
-        }
-        if (globalAny.process?.versions?.node != null || globalAny.process?.version != null) {
-          return {
-            name: "node",
-            version: globalAny.process?.versions?.node ?? globalAny.process?.version,
-            hostname: getEnvironmentHostname(globalAny.process, globalAny.Deno, globalAny.Bun, globalAny.location)
-          };
-        }
-        if (globalAny.process != null) {
-          return {
-            name: "node",
-            version: "unknown",
-            hostname: getEnvironmentHostname(globalAny.process, globalAny.Deno, globalAny.Bun, globalAny.location)
-          };
-        }
-        return {
-          name: "unknown"
-        };
-      }
-      function getEnvironmentHostname(nodeProcess, deno, bun, location) {
-        const processHostname = nodeProcess?.env?.HOSTNAME ?? nodeProcess?.env?.HOST ?? nodeProcess?.env?.COMPUTERNAME;
-        if (processHostname != null && processHostname.length > 0) {
-          return processHostname;
-        }
-        const bunHostname = bun?.env?.HOSTNAME ?? bun?.env?.HOST ?? bun?.env?.COMPUTERNAME;
-        if (bunHostname != null && bunHostname.length > 0) {
-          return bunHostname;
-        }
-        try {
-          const denoEnvGet = deno?.env?.get;
-          if (typeof denoEnvGet === "function") {
-            const value = denoEnvGet("HOSTNAME");
-            if (value != null && value.length > 0) {
-              return value;
-            }
-          }
-        } catch {
-        }
-        if (location?.hostname != null && location.hostname.length > 0) {
-          return location.hostname;
-        }
-        return void 0;
-      }
-      function resolveDenoHostname(deno) {
-        try {
-          if (typeof deno?.hostname === "function") {
-            const value = deno.hostname();
-            if (value != null && value.length > 0) {
-              return value;
-            }
-          }
-        } catch {
-        }
-        const locationHostname = globalThis.location?.hostname;
-        if (locationHostname != null && locationHostname.length > 0) {
-          return locationHostname;
-        }
-        return void 0;
-      }
-      function getNodeEnv() {
-        const globalProcess = globalThis?.process;
-        return globalProcess?.env?.NODE_ENV;
-      }
-      function isNativeError(value) {
-        if (value instanceof Error) {
-          return true;
-        }
-        if (value != null && typeof value === "object") {
-          const objectTag = Object.prototype.toString.call(value);
-          if (/\[object .*Error\]/.test(objectTag)) {
-            return true;
-          }
-          const name = value.name;
-          if (typeof name === "string" && name.endsWith("Error")) {
-            return true;
-          }
-        }
-        return false;
-      }
-    }
-    var ANSI_REGEX = /\u001b\[[0-9;]*m/g;
-    var COLOR_TOKENS = {
-      black: "#000000",
-      red: "#ef5350",
-      green: "#66bb6a",
-      yellow: "#fdd835",
-      blue: "#42a5f5",
-      magenta: "#ab47bc",
-      cyan: "#26c6da",
-      white: "#fafafa",
-      blackBright: "#424242",
-      redBright: "#ff7043",
-      greenBright: "#81c784",
-      yellowBright: "#ffe082",
-      blueBright: "#64b5f6",
-      magentaBright: "#ce93d8",
-      cyanBright: "#4dd0e1",
-      whiteBright: "#ffffff"
-    };
-    var BACKGROUND_TOKENS = {
-      bgBlack: "#000000",
-      bgRed: "#ef5350",
-      bgGreen: "#66bb6a",
-      bgYellow: "#fdd835",
-      bgBlue: "#42a5f5",
-      bgMagenta: "#ab47bc",
-      bgCyan: "#26c6da",
-      bgWhite: "#fafafa",
-      bgBlackBright: "#424242",
-      bgRedBright: "#ff7043",
-      bgGreenBright: "#81c784",
-      bgYellowBright: "#ffe082",
-      bgBlueBright: "#64b5f6",
-      bgMagentaBright: "#ce93d8",
-      bgCyanBright: "#4dd0e1",
-      bgWhiteBright: "#ffffff"
-    };
-    var BROWSER_PATH_REGEX = /(?:(?:file|https?|global code|[^@]+)@)?(?:file:)?((?:\/[^:/]+){2,})(?::(\d+))?(?::(\d+))?/;
-    var runtime = createLoggerEnvironment();
-    exports2.loggerEnvironment = runtime;
-    __exportStar(require_interfaces(), exports2);
-    var BaseLogger = class {
-      constructor(settings, logObj, stackDepthLevel = Number.NaN) {
-        this.logObj = logObj;
-        this.stackDepthLevel = stackDepthLevel;
-        this.runtime = runtime;
-        this.maxErrorCauseDepth = 5;
-        this.settings = {
-          type: settings?.type ?? "pretty",
-          name: settings?.name,
-          parentNames: settings?.parentNames,
-          minLevel: settings?.minLevel ?? 0,
-          argumentsArrayName: settings?.argumentsArrayName,
-          hideLogPositionForProduction: settings?.hideLogPositionForProduction ?? false,
-          prettyLogTemplate: settings?.prettyLogTemplate ?? "{{yyyy}}.{{mm}}.{{dd}} {{hh}}:{{MM}}:{{ss}}:{{ms}}	{{logLevelName}}	{{filePathWithLine}}{{nameWithDelimiterPrefix}}	",
-          prettyErrorTemplate: settings?.prettyErrorTemplate ?? "\n{{errorName}} {{errorMessage}}\nerror stack:\n{{errorStack}}",
-          prettyErrorStackTemplate: settings?.prettyErrorStackTemplate ?? "  \u2022 {{fileName}}	{{method}}\n	{{filePathWithLine}}",
-          prettyErrorParentNamesSeparator: settings?.prettyErrorParentNamesSeparator ?? ":",
-          prettyErrorLoggerNameDelimiter: settings?.prettyErrorLoggerNameDelimiter ?? "	",
-          stylePrettyLogs: settings?.stylePrettyLogs ?? true,
-          prettyLogTimeZone: settings?.prettyLogTimeZone ?? "UTC",
-          prettyLogStyles: settings?.prettyLogStyles ?? {
-            logLevelName: {
-              "*": ["bold", "black", "bgWhiteBright", "dim"],
-              SILLY: ["bold", "white"],
-              TRACE: ["bold", "whiteBright"],
-              DEBUG: ["bold", "green"],
-              INFO: ["bold", "blue"],
-              WARN: ["bold", "yellow"],
-              ERROR: ["bold", "red"],
-              FATAL: ["bold", "redBright"]
-            },
-            dateIsoStr: "white",
-            filePathWithLine: "white",
-            name: ["white", "bold"],
-            nameWithDelimiterPrefix: ["white", "bold"],
-            nameWithDelimiterSuffix: ["white", "bold"],
-            errorName: ["bold", "bgRedBright", "whiteBright"],
-            fileName: ["yellow"],
-            fileNameWithLine: "white"
-          },
-          prettyInspectOptions: settings?.prettyInspectOptions ?? {
-            colors: true,
-            compact: false,
-            depth: Infinity
-          },
-          metaProperty: settings?.metaProperty ?? "_meta",
-          maskPlaceholder: settings?.maskPlaceholder ?? "[***]",
-          maskValuesOfKeys: settings?.maskValuesOfKeys ?? ["password"],
-          maskValuesOfKeysCaseInsensitive: settings?.maskValuesOfKeysCaseInsensitive ?? false,
-          maskValuesRegEx: settings?.maskValuesRegEx,
-          prefix: [...settings?.prefix ?? []],
-          attachedTransports: [...settings?.attachedTransports ?? []],
-          overwrite: {
-            mask: settings?.overwrite?.mask,
-            toLogObj: settings?.overwrite?.toLogObj,
-            addMeta: settings?.overwrite?.addMeta,
-            addPlaceholders: settings?.overwrite?.addPlaceholders,
-            formatMeta: settings?.overwrite?.formatMeta,
-            formatLogObj: settings?.overwrite?.formatLogObj,
-            transportFormatted: settings?.overwrite?.transportFormatted,
-            transportJSON: settings?.overwrite?.transportJSON
-          }
-        };
-        this.captureStackForMeta = this._shouldCaptureStack();
-      }
-      log(logLevelId, logLevelName, ...args) {
-        if (logLevelId < this.settings.minLevel) {
-          return;
-        }
-        const resolvedArgs = this._resolveLogArguments(args);
-        const logArgs = [...this.settings.prefix, ...resolvedArgs];
-        const maskedArgs = this.settings.overwrite?.mask != null ? this.settings.overwrite?.mask(logArgs) : this.settings.maskValuesOfKeys != null && this.settings.maskValuesOfKeys.length > 0 ? this._mask(logArgs) : logArgs;
-        const thisLogObj = this.logObj != null ? this._recursiveCloneAndExecuteFunctions(this.logObj) : void 0;
-        const logObj = this.settings.overwrite?.toLogObj != null ? this.settings.overwrite?.toLogObj(maskedArgs, thisLogObj) : this._toLogObj(maskedArgs, thisLogObj);
-        const logObjWithMeta = this.settings.overwrite?.addMeta != null ? this.settings.overwrite?.addMeta(logObj, logLevelId, logLevelName) : this._addMetaToLogObj(logObj, logLevelId, logLevelName);
-        const logMeta = logObjWithMeta?.[this.settings.metaProperty];
-        let logMetaMarkup;
-        let logArgsAndErrorsMarkup = void 0;
-        if (this.settings.overwrite?.formatMeta != null) {
-          logMetaMarkup = this.settings.overwrite?.formatMeta(logObjWithMeta?.[this.settings.metaProperty]);
-        }
-        if (this.settings.overwrite?.formatLogObj != null) {
-          logArgsAndErrorsMarkup = this.settings.overwrite?.formatLogObj(maskedArgs, this.settings);
-        }
-        if (this.settings.type === "pretty") {
-          logMetaMarkup = logMetaMarkup ?? this._prettyFormatLogObjMeta(logObjWithMeta?.[this.settings.metaProperty]);
-          logArgsAndErrorsMarkup = logArgsAndErrorsMarkup ?? runtime.prettyFormatLogObj(maskedArgs, this.settings);
-        }
-        if (logMetaMarkup != null && logArgsAndErrorsMarkup != null) {
-          if (this.settings.overwrite?.transportFormatted != null) {
-            const transport = this.settings.overwrite.transportFormatted;
-            const declaredParams = transport.length;
-            if (declaredParams < 4) {
-              transport(logMetaMarkup, logArgsAndErrorsMarkup.args, logArgsAndErrorsMarkup.errors);
-            } else if (declaredParams === 4) {
-              transport(logMetaMarkup, logArgsAndErrorsMarkup.args, logArgsAndErrorsMarkup.errors, logMeta);
-            } else {
-              transport(logMetaMarkup, logArgsAndErrorsMarkup.args, logArgsAndErrorsMarkup.errors, logMeta, this.settings);
-            }
-          } else {
-            runtime.transportFormatted(logMetaMarkup, logArgsAndErrorsMarkup.args, logArgsAndErrorsMarkup.errors, logMeta, this.settings);
-          }
-        } else {
-          if (this.settings.overwrite?.transportJSON != null) {
-            this.settings.overwrite.transportJSON(logObjWithMeta);
-          } else if (this.settings.type !== "hidden") {
-            runtime.transportJSON(logObjWithMeta);
-          }
-        }
-        if (this.settings.attachedTransports != null && this.settings.attachedTransports.length > 0) {
-          this.settings.attachedTransports.forEach((transportLogger) => {
-            transportLogger(logObjWithMeta);
-          });
-        }
-        return logObjWithMeta;
-      }
-      attachTransport(transportLogger) {
-        this.settings.attachedTransports.push(transportLogger);
-      }
-      getSubLogger(settings, logObj) {
-        const subLoggerSettings = {
-          ...this.settings,
-          ...settings,
-          parentNames: this.settings?.parentNames != null && this.settings?.name != null ? [...this.settings.parentNames, this.settings.name] : this.settings?.name != null ? [this.settings.name] : void 0,
-          prefix: [...this.settings.prefix, ...settings?.prefix ?? []]
-        };
-        const subLogger = new this.constructor(subLoggerSettings, logObj ?? this.logObj, this.stackDepthLevel);
-        return subLogger;
-      }
-      _mask(args) {
-        const maskKeys = this._getMaskKeys();
-        return args?.map((arg) => {
-          return this._recursiveCloneAndMaskValuesOfKeys(arg, maskKeys);
-        });
-      }
-      _getMaskKeys() {
-        const maskKeys = this.settings.maskValuesOfKeys ?? [];
-        const signature = maskKeys.map(String).join("|");
-        if (this.settings.maskValuesOfKeysCaseInsensitive === true) {
-          if (this.maskKeysCache?.source === maskKeys && this.maskKeysCache.caseInsensitive === true && this.maskKeysCache.signature === signature) {
-            return this.maskKeysCache.normalized;
-          }
-          const normalized = maskKeys.map((key) => typeof key === "string" ? key.toLowerCase() : String(key).toLowerCase());
-          this.maskKeysCache = {
-            source: maskKeys,
-            caseInsensitive: true,
-            normalized,
-            signature
-          };
-          return normalized;
-        }
-        this.maskKeysCache = {
-          source: maskKeys,
-          caseInsensitive: false,
-          normalized: maskKeys,
-          signature
-        };
-        return maskKeys;
-      }
-      _resolveLogArguments(args) {
-        if (args.length === 1 && typeof args[0] === "function") {
-          const candidate = args[0];
-          if (candidate.length === 0) {
-            const result = candidate();
-            return Array.isArray(result) ? result : [result];
-          }
-        }
-        return args;
-      }
-      _recursiveCloneAndMaskValuesOfKeys(source, keys, seen = []) {
-        if (seen.includes(source)) {
-          return { ...source };
-        }
-        if (typeof source === "object" && source !== null) {
-          seen.push(source);
-        }
-        if (runtime.isError(source) || runtime.isBuffer(source)) {
-          return source;
-        } else if (source instanceof Map) {
-          return new Map(source);
-        } else if (source instanceof Set) {
-          return new Set(source);
-        } else if (Array.isArray(source)) {
-          return source.map((item) => this._recursiveCloneAndMaskValuesOfKeys(item, keys, seen));
-        } else if (source instanceof Date) {
-          return new Date(source.getTime());
-        } else if (source instanceof URL) {
-          return (0, urlToObj_js_1.urlToObject)(source);
-        } else if (source !== null && typeof source === "object") {
-          const baseObject = runtime.isError(source) ? this._cloneError(source) : Object.create(Object.getPrototypeOf(source));
-          return Object.getOwnPropertyNames(source).reduce((o, prop) => {
-            const lookupKey = this.settings?.maskValuesOfKeysCaseInsensitive !== true ? prop : typeof prop === "string" ? prop.toLowerCase() : String(prop).toLowerCase();
-            o[prop] = keys.includes(lookupKey) ? this.settings.maskPlaceholder : (() => {
-              try {
-                return this._recursiveCloneAndMaskValuesOfKeys(source[prop], keys, seen);
-              } catch {
-                return null;
-              }
-            })();
-            return o;
-          }, baseObject);
-        } else {
-          if (typeof source === "string") {
-            let modifiedSource = source;
-            for (const regEx of this.settings?.maskValuesRegEx || []) {
-              modifiedSource = modifiedSource.replace(regEx, this.settings?.maskPlaceholder || "");
-            }
-            return modifiedSource;
-          }
-          return source;
-        }
-      }
-      _recursiveCloneAndExecuteFunctions(source, seen = []) {
-        if (this.isObjectOrArray(source) && seen.includes(source)) {
-          return this.shallowCopy(source);
-        }
-        if (this.isObjectOrArray(source)) {
-          seen.push(source);
-        }
-        if (Array.isArray(source)) {
-          return source.map((item) => this._recursiveCloneAndExecuteFunctions(item, seen));
-        } else if (source instanceof Date) {
-          return new Date(source.getTime());
-        } else if (this.isObject(source)) {
-          return Object.getOwnPropertyNames(source).reduce((o, prop) => {
-            const descriptor = Object.getOwnPropertyDescriptor(source, prop);
-            if (descriptor) {
-              Object.defineProperty(o, prop, descriptor);
-              const value = source[prop];
-              o[prop] = typeof value === "function" ? value() : this._recursiveCloneAndExecuteFunctions(value, seen);
-            }
-            return o;
-          }, Object.create(Object.getPrototypeOf(source)));
-        } else {
-          return source;
-        }
-      }
-      isObjectOrArray(value) {
-        return typeof value === "object" && value !== null;
-      }
-      isObject(value) {
-        return typeof value === "object" && !Array.isArray(value) && value !== null;
-      }
-      shallowCopy(source) {
-        if (Array.isArray(source)) {
-          return [...source];
-        } else {
-          return { ...source };
-        }
-      }
-      _toLogObj(args, clonedLogObj = {}) {
-        args = args?.map((arg) => runtime.isError(arg) ? this._toErrorObject(arg) : arg);
-        if (this.settings.argumentsArrayName == null) {
-          if (args.length === 1 && !Array.isArray(args[0]) && runtime.isBuffer(args[0]) !== true && !(args[0] instanceof Date)) {
-            clonedLogObj = typeof args[0] === "object" && args[0] != null ? { ...args[0], ...clonedLogObj } : { 0: args[0], ...clonedLogObj };
-          } else {
-            clonedLogObj = { ...clonedLogObj, ...args };
-          }
-        } else {
-          clonedLogObj = {
-            ...clonedLogObj,
-            [this.settings.argumentsArrayName]: args
-          };
-        }
-        return clonedLogObj;
-      }
-      _cloneError(error) {
-        const cloned = new error.constructor();
-        Object.getOwnPropertyNames(error).forEach((key) => {
-          cloned[key] = error[key];
-        });
-        return cloned;
-      }
-      _toErrorObject(error, depth = 0, seen = /* @__PURE__ */ new Set()) {
-        if (!seen.has(error)) {
-          seen.add(error);
-        }
-        const errorObject = {
-          nativeError: error,
-          name: error.name ?? "Error",
-          message: error.message,
-          stack: runtime.getErrorTrace(error)
-        };
-        if (depth >= this.maxErrorCauseDepth) {
-          return errorObject;
-        }
-        const causeValue = error.cause;
-        if (causeValue != null) {
-          const normalizedCause = (0, errorUtils_js_1.toError)(causeValue);
-          if (!seen.has(normalizedCause)) {
-            errorObject.cause = this._toErrorObject(normalizedCause, depth + 1, seen);
-          }
-        }
-        return errorObject;
-      }
-      _addMetaToLogObj(logObj, logLevelId, logLevelName) {
-        return {
-          ...logObj,
-          [this.settings.metaProperty]: runtime.getMeta(logLevelId, logLevelName, this.stackDepthLevel, !this.captureStackForMeta, this.settings.name, this.settings.parentNames)
-        };
-      }
-      _shouldCaptureStack() {
-        if (this.settings.hideLogPositionForProduction) {
-          return false;
-        }
-        if (this.settings.type === "json") {
-          return true;
-        }
-        const template = this.settings.prettyLogTemplate ?? "";
-        const stackPlaceholders = /{{\s*(file(Name|Path|Line|PathWithLine|NameWithLine)|fullFilePath)\s*}}/;
-        if (stackPlaceholders.test(template)) {
-          return true;
-        }
-        return false;
-      }
-      _prettyFormatLogObjMeta(logObjMeta) {
-        return (0, metaFormatting_js_1.buildPrettyMeta)(this.settings, logObjMeta).text;
-      }
-    };
-    exports2.BaseLogger = BaseLogger;
-  }
-});
-
-// node_modules/tslog/cjs/index.js
-var require_cjs = __commonJS({
-  "node_modules/tslog/cjs/index.js"(exports2) {
-    "use strict";
-    var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
-      if (k2 === void 0) k2 = k;
-      var desc = Object.getOwnPropertyDescriptor(m, k);
-      if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-        desc = { enumerable: true, get: function() {
-          return m[k];
-        } };
-      }
-      Object.defineProperty(o, k2, desc);
-    }) : (function(o, m, k, k2) {
-      if (k2 === void 0) k2 = k;
-      o[k2] = m[k];
-    }));
-    var __exportStar = exports2 && exports2.__exportStar || function(m, exports3) {
-      for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports3, p)) __createBinding(exports3, m, p);
-    };
-    Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.Logger = void 0;
-    var BaseLogger_js_1 = require_BaseLogger();
-    __exportStar(require_interfaces(), exports2);
-    __exportStar(require_BaseLogger(), exports2);
-    var Logger = class extends BaseLogger_js_1.BaseLogger {
-      constructor(settings, logObj) {
-        const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
-        const normalizedSettings = { ...settings ?? {} };
-        if (isBrowser) {
-          normalizedSettings.stylePrettyLogs = settings?.stylePrettyLogs ?? true;
-        }
-        super(normalizedSettings, logObj, Number.NaN);
-      }
-      log(logLevelId, logLevelName, ...args) {
-        return super.log(logLevelId, logLevelName, ...args);
-      }
-      silly(...args) {
-        return super.log(0, "SILLY", ...args);
-      }
-      trace(...args) {
-        return super.log(1, "TRACE", ...args);
-      }
-      debug(...args) {
-        return super.log(2, "DEBUG", ...args);
-      }
-      info(...args) {
-        return super.log(3, "INFO", ...args);
-      }
-      warn(...args) {
-        return super.log(4, "WARN", ...args);
-      }
-      error(...args) {
-        return super.log(5, "ERROR", ...args);
-      }
-      fatal(...args) {
-        return super.log(6, "FATAL", ...args);
-      }
-      getSubLogger(settings, logObj) {
-        return super.getSubLogger(settings, logObj);
-      }
-    };
-    exports2.Logger = Logger;
   }
 });
 
@@ -36390,6 +34643,1905 @@ var require_zod = __commonJS({
   }
 });
 
+// node_modules/stacktrace-parser/dist/stack-trace-parser.cjs.js
+var require_stack_trace_parser_cjs = __commonJS({
+  "node_modules/stacktrace-parser/dist/stack-trace-parser.cjs.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    var UNKNOWN_FUNCTION = "<unknown>";
+    function parse(stackString) {
+      var lines = stackString.split("\n");
+      return lines.reduce(function(stack, line) {
+        var parseResult = parseChrome(line) || parseWinjs(line) || parseGecko(line) || parseNode(line) || parseJSC(line);
+        if (parseResult) {
+          stack.push(parseResult);
+        }
+        return stack;
+      }, []);
+    }
+    var chromeRe = /^\s*at (.*?) ?\(((?:file|https?|blob|chrome-extension|native|eval|webpack|rsc|<anonymous>|\/|[a-z]:\\|\\\\).*?)(?::(\d+))?(?::(\d+))?\)?\s*$/i;
+    var chromeEvalRe = /\((\S*)(?::(\d+))(?::(\d+))\)/;
+    function parseChrome(line) {
+      var parts = chromeRe.exec(line);
+      if (!parts) {
+        return null;
+      }
+      var isNative = parts[2] && parts[2].indexOf("native") === 0;
+      var isEval = parts[2] && parts[2].indexOf("eval") === 0;
+      var submatch = chromeEvalRe.exec(parts[2]);
+      if (isEval && submatch != null) {
+        parts[2] = submatch[1];
+        parts[3] = submatch[2];
+        parts[4] = submatch[3];
+      }
+      return {
+        file: !isNative ? parts[2] : null,
+        methodName: parts[1] || UNKNOWN_FUNCTION,
+        arguments: isNative ? [parts[2]] : [],
+        lineNumber: parts[3] ? +parts[3] : null,
+        column: parts[4] ? +parts[4] : null
+      };
+    }
+    var winjsRe = /^\s*at (?:((?:\[object object\])?.+) )?\(?((?:file|ms-appx|https?|webpack|rsc|blob):.*?):(\d+)(?::(\d+))?\)?\s*$/i;
+    function parseWinjs(line) {
+      var parts = winjsRe.exec(line);
+      if (!parts) {
+        return null;
+      }
+      return {
+        file: parts[2],
+        methodName: parts[1] || UNKNOWN_FUNCTION,
+        arguments: [],
+        lineNumber: +parts[3],
+        column: parts[4] ? +parts[4] : null
+      };
+    }
+    var geckoRe = /^\s*(.*?)(?:\((.*?)\))?(?:^|@)((?:file|https?|blob|chrome|webpack|rsc|resource|\[native).*?|[^@]*bundle)(?::(\d+))?(?::(\d+))?\s*$/i;
+    var geckoEvalRe = /(\S+) line (\d+)(?: > eval line \d+)* > eval/i;
+    function parseGecko(line) {
+      var parts = geckoRe.exec(line);
+      if (!parts) {
+        return null;
+      }
+      var isEval = parts[3] && parts[3].indexOf(" > eval") > -1;
+      var submatch = geckoEvalRe.exec(parts[3]);
+      if (isEval && submatch != null) {
+        parts[3] = submatch[1];
+        parts[4] = submatch[2];
+        parts[5] = null;
+      }
+      return {
+        file: parts[3],
+        methodName: parts[1] || UNKNOWN_FUNCTION,
+        arguments: parts[2] ? parts[2].split(",") : [],
+        lineNumber: parts[4] ? +parts[4] : null,
+        column: parts[5] ? +parts[5] : null
+      };
+    }
+    var javaScriptCoreRe = /^\s*(?:([^@]*)(?:\((.*?)\))?@)?(\S.*?):(\d+)(?::(\d+))?\s*$/i;
+    function parseJSC(line) {
+      var parts = javaScriptCoreRe.exec(line);
+      if (!parts) {
+        return null;
+      }
+      return {
+        file: parts[3],
+        methodName: parts[1] || UNKNOWN_FUNCTION,
+        arguments: [],
+        lineNumber: +parts[4],
+        column: parts[5] ? +parts[5] : null
+      };
+    }
+    var nodeRe = /^\s*at (?:((?:\[object object\])?[^\\/]+(?: \[as \S+\])?) )?\(?(.*?):(\d+)(?::(\d+))?\)?\s*$/i;
+    function parseNode(line) {
+      var parts = nodeRe.exec(line);
+      if (!parts) {
+        return null;
+      }
+      return {
+        file: parts[2],
+        methodName: parts[1] || UNKNOWN_FUNCTION,
+        arguments: [],
+        lineNumber: +parts[3],
+        column: parts[4] ? +parts[4] : null
+      };
+    }
+    exports2.parse = parse;
+  }
+});
+
+// node_modules/tslog/cjs/urlToObj.js
+var require_urlToObj = __commonJS({
+  "node_modules/tslog/cjs/urlToObj.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.urlToObject = urlToObject;
+    function urlToObject(url) {
+      return {
+        href: url.href,
+        protocol: url.protocol,
+        username: url.username,
+        password: url.password,
+        host: url.host,
+        hostname: url.hostname,
+        port: url.port,
+        pathname: url.pathname,
+        search: url.search,
+        searchParams: [...url.searchParams].map(([key, value]) => ({ key, value })),
+        hash: url.hash,
+        origin: url.origin
+      };
+    }
+  }
+});
+
+// node_modules/tslog/cjs/prettyLogStyles.js
+var require_prettyLogStyles = __commonJS({
+  "node_modules/tslog/cjs/prettyLogStyles.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.prettyLogStyles = void 0;
+    exports2.prettyLogStyles = {
+      reset: [0, 0],
+      bold: [1, 22],
+      dim: [2, 22],
+      italic: [3, 23],
+      underline: [4, 24],
+      overline: [53, 55],
+      inverse: [7, 27],
+      hidden: [8, 28],
+      strikethrough: [9, 29],
+      black: [30, 39],
+      red: [31, 39],
+      green: [32, 39],
+      yellow: [33, 39],
+      blue: [34, 39],
+      magenta: [35, 39],
+      cyan: [36, 39],
+      white: [37, 39],
+      blackBright: [90, 39],
+      redBright: [91, 39],
+      greenBright: [92, 39],
+      yellowBright: [93, 39],
+      blueBright: [94, 39],
+      magentaBright: [95, 39],
+      cyanBright: [96, 39],
+      whiteBright: [97, 39],
+      bgBlack: [40, 49],
+      bgRed: [41, 49],
+      bgGreen: [42, 49],
+      bgYellow: [43, 49],
+      bgBlue: [44, 49],
+      bgMagenta: [45, 49],
+      bgCyan: [46, 49],
+      bgWhite: [47, 49],
+      bgBlackBright: [100, 49],
+      bgRedBright: [101, 49],
+      bgGreenBright: [102, 49],
+      bgYellowBright: [103, 49],
+      bgBlueBright: [104, 49],
+      bgMagentaBright: [105, 49],
+      bgCyanBright: [106, 49],
+      bgWhiteBright: [107, 49]
+    };
+  }
+});
+
+// node_modules/tslog/cjs/formatTemplate.js
+var require_formatTemplate = __commonJS({
+  "node_modules/tslog/cjs/formatTemplate.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.formatTemplate = formatTemplate;
+    var prettyLogStyles_js_1 = require_prettyLogStyles();
+    function formatTemplate(settings, template, values, hideUnsetPlaceholder = false) {
+      const templateString = String(template);
+      const ansiColorWrap = (placeholderValue, code) => `\x1B[${code[0]}m${placeholderValue}\x1B[${code[1]}m`;
+      const styleWrap = (value, style) => {
+        if (style != null && typeof style === "string") {
+          return ansiColorWrap(value, prettyLogStyles_js_1.prettyLogStyles[style]);
+        } else if (style != null && Array.isArray(style)) {
+          return style.reduce((prevValue, thisStyle) => styleWrap(prevValue, thisStyle), value);
+        } else {
+          if (style != null && style[value.trim()] != null) {
+            return styleWrap(value, style[value.trim()]);
+          } else if (style != null && style["*"] != null) {
+            return styleWrap(value, style["*"]);
+          } else {
+            return value;
+          }
+        }
+      };
+      const defaultStyle = null;
+      return templateString.replace(/{{(.+?)}}/g, (_, placeholder) => {
+        const value = values[placeholder] != null ? String(values[placeholder]) : hideUnsetPlaceholder ? "" : _;
+        return settings.stylePrettyLogs ? styleWrap(value, settings?.prettyLogStyles?.[placeholder] ?? defaultStyle) + ansiColorWrap("", prettyLogStyles_js_1.prettyLogStyles.reset) : value;
+      });
+    }
+  }
+});
+
+// node_modules/tslog/cjs/formatNumberAddZeros.js
+var require_formatNumberAddZeros = __commonJS({
+  "node_modules/tslog/cjs/formatNumberAddZeros.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.formatNumberAddZeros = formatNumberAddZeros;
+    function formatNumberAddZeros(value, digits = 2, addNumber = 0) {
+      if (value != null && isNaN(value)) {
+        return "";
+      }
+      value = value != null ? value + addNumber : value;
+      return digits === 2 ? value == null ? "--" : value < 10 ? "0" + value : value.toString() : value == null ? "---" : value < 10 ? "00" + value : value < 100 ? "0" + value : value.toString();
+    }
+  }
+});
+
+// node_modules/tslog/cjs/internal/metaFormatting.js
+var require_metaFormatting = __commonJS({
+  "node_modules/tslog/cjs/internal/metaFormatting.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.buildPrettyMeta = buildPrettyMeta;
+    var formatTemplate_js_1 = require_formatTemplate();
+    var formatNumberAddZeros_js_1 = require_formatNumberAddZeros();
+    function buildPrettyMeta(settings, meta) {
+      if (meta == null) {
+        return {
+          text: "",
+          template: settings.prettyLogTemplate,
+          placeholders: {}
+        };
+      }
+      let template = settings.prettyLogTemplate;
+      const placeholderValues = {};
+      if (template.includes("{{yyyy}}.{{mm}}.{{dd}} {{hh}}:{{MM}}:{{ss}}:{{ms}}")) {
+        template = template.replace("{{yyyy}}.{{mm}}.{{dd}} {{hh}}:{{MM}}:{{ss}}:{{ms}}", "{{dateIsoStr}}");
+      } else {
+        if (settings.prettyLogTimeZone === "UTC") {
+          placeholderValues["yyyy"] = meta.date?.getUTCFullYear() ?? "----";
+          placeholderValues["mm"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCMonth(), 2, 1);
+          placeholderValues["dd"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCDate(), 2);
+          placeholderValues["hh"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCHours(), 2);
+          placeholderValues["MM"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCMinutes(), 2);
+          placeholderValues["ss"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCSeconds(), 2);
+          placeholderValues["ms"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getUTCMilliseconds(), 3);
+        } else {
+          placeholderValues["yyyy"] = meta.date?.getFullYear() ?? "----";
+          placeholderValues["mm"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getMonth(), 2, 1);
+          placeholderValues["dd"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getDate(), 2);
+          placeholderValues["hh"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getHours(), 2);
+          placeholderValues["MM"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getMinutes(), 2);
+          placeholderValues["ss"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getSeconds(), 2);
+          placeholderValues["ms"] = (0, formatNumberAddZeros_js_1.formatNumberAddZeros)(meta.date?.getMilliseconds(), 3);
+        }
+      }
+      const dateInSettingsTimeZone = settings.prettyLogTimeZone === "UTC" ? meta.date : meta.date != null ? new Date(meta.date.getTime() - meta.date.getTimezoneOffset() * 6e4) : void 0;
+      placeholderValues["rawIsoStr"] = dateInSettingsTimeZone?.toISOString() ?? "";
+      placeholderValues["dateIsoStr"] = dateInSettingsTimeZone?.toISOString().replace("T", " ").replace("Z", "") ?? "";
+      placeholderValues["logLevelName"] = meta.logLevelName;
+      placeholderValues["fileNameWithLine"] = meta.path?.fileNameWithLine ?? "";
+      placeholderValues["filePathWithLine"] = meta.path?.filePathWithLine ?? "";
+      placeholderValues["fullFilePath"] = meta.path?.fullFilePath ?? "";
+      let parentNamesString = settings.parentNames?.join(settings.prettyErrorParentNamesSeparator);
+      parentNamesString = parentNamesString != null && meta.name != null ? parentNamesString + settings.prettyErrorParentNamesSeparator : void 0;
+      const combinedName = meta.name != null || parentNamesString != null ? `${parentNamesString ?? ""}${meta.name ?? ""}` : "";
+      placeholderValues["name"] = combinedName;
+      placeholderValues["nameWithDelimiterPrefix"] = combinedName.length > 0 ? settings.prettyErrorLoggerNameDelimiter + combinedName : "";
+      placeholderValues["nameWithDelimiterSuffix"] = combinedName.length > 0 ? combinedName + settings.prettyErrorLoggerNameDelimiter : "";
+      if (settings.overwrite?.addPlaceholders != null) {
+        settings.overwrite.addPlaceholders(meta, placeholderValues);
+      }
+      return {
+        text: (0, formatTemplate_js_1.formatTemplate)(settings, template, placeholderValues),
+        template,
+        placeholders: placeholderValues
+      };
+    }
+  }
+});
+
+// node_modules/tslog/cjs/internal/stackTrace.js
+var require_stackTrace = __commonJS({
+  "node_modules/tslog/cjs/internal/stackTrace.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.splitStackLines = splitStackLines;
+    exports2.sanitizeStackLines = sanitizeStackLines;
+    exports2.toStackFrames = toStackFrames;
+    exports2.findFirstExternalFrameIndex = findFirstExternalFrameIndex;
+    exports2.getFrameAt = getFrameAt;
+    exports2.getCleanStackLines = getCleanStackLines;
+    exports2.buildStackTrace = buildStackTrace;
+    exports2.isIgnorableFrame = isIgnorableFrame;
+    exports2.clampIndex = clampIndex;
+    exports2.pickCallerStackFrame = pickCallerStackFrame;
+    exports2.getDefaultIgnorePatterns = getDefaultIgnorePatterns;
+    var DEFAULT_IGNORE_PATTERNS = [
+      /(?:^|[\\/])node_modules[\\/].*tslog/i,
+      /(?:^|[\\/])deps[\\/].*tslog/i,
+      /tslog[\\/]+src[\\/]+internal[\\/]/i,
+      /tslog[\\/]+src[\\/]BaseLogger/i,
+      /tslog[\\/]+src[\\/]index/i
+    ];
+    function splitStackLines(error) {
+      const stack = typeof error?.stack === "string" ? error.stack : void 0;
+      if (stack == null || stack.length === 0) {
+        return [];
+      }
+      return stack.split("\n").map((line) => line.trimEnd());
+    }
+    function sanitizeStackLines(lines) {
+      return lines.filter((line) => line.length > 0 && !/^\s*Error\b/.test(line));
+    }
+    function toStackFrames(lines, parseLine) {
+      const frames = [];
+      for (const line of lines) {
+        const frame = parseLine(line);
+        if (frame != null) {
+          frames.push(frame);
+        }
+      }
+      return frames;
+    }
+    function findFirstExternalFrameIndex(frames, ignorePatterns = DEFAULT_IGNORE_PATTERNS) {
+      for (let index = 0; index < frames.length; index += 1) {
+        const frame = frames[index];
+        const filePathCandidate = frame.filePath ?? "";
+        const fullPathCandidate = frame.fullFilePath ?? "";
+        if (!ignorePatterns.some((pattern) => pattern.test(filePathCandidate) || pattern.test(fullPathCandidate))) {
+          return index;
+        }
+      }
+      return 0;
+    }
+    function getFrameAt(frames, index) {
+      if (index < 0 || index >= frames.length) {
+        return void 0;
+      }
+      return frames[index];
+    }
+    function getCleanStackLines(error) {
+      return sanitizeStackLines(splitStackLines(error));
+    }
+    function buildStackTrace(error, parseLine) {
+      return toStackFrames(getCleanStackLines(error), parseLine);
+    }
+    function isIgnorableFrame(frame, ignorePatterns) {
+      const filePathCandidate = frame.filePath ?? "";
+      const fullPathCandidate = frame.fullFilePath ?? "";
+      return ignorePatterns.some((pattern) => pattern.test(filePathCandidate) || pattern.test(fullPathCandidate));
+    }
+    function clampIndex(index, maxExclusive) {
+      if (index < 0) {
+        return 0;
+      }
+      if (index >= maxExclusive) {
+        return Math.max(0, maxExclusive - 1);
+      }
+      return index;
+    }
+    function pickCallerStackFrame(error, parseLine, options = {}) {
+      const lines = getCleanStackLines(error);
+      const frames = toStackFrames(lines, parseLine);
+      if (frames.length === 0) {
+        return void 0;
+      }
+      const ignorePatterns = options.ignorePatterns ?? DEFAULT_IGNORE_PATTERNS;
+      const autoIndex = findFirstExternalFrameIndex(frames, ignorePatterns);
+      const resolvedIndex = options.stackDepthLevel != null ? options.stackDepthLevel : autoIndex;
+      return getFrameAt(frames, clampIndex(resolvedIndex, frames.length));
+    }
+    function getDefaultIgnorePatterns() {
+      return [...DEFAULT_IGNORE_PATTERNS];
+    }
+  }
+});
+
+// node_modules/tslog/cjs/internal/errorUtils.js
+var require_errorUtils = __commonJS({
+  "node_modules/tslog/cjs/internal/errorUtils.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.collectErrorCauses = collectErrorCauses;
+    exports2.toError = toError;
+    exports2.toErrorObject = toErrorObject;
+    var stackTrace_js_1 = require_stackTrace();
+    var DEFAULT_CAUSE_DEPTH = 5;
+    function collectErrorCauses(error, options = {}) {
+      const maxDepth = options.maxDepth ?? DEFAULT_CAUSE_DEPTH;
+      const causes = [];
+      const visited = /* @__PURE__ */ new Set();
+      let current = error;
+      let depth = 0;
+      while (current != null && depth < maxDepth) {
+        const cause = current?.cause;
+        if (cause == null || visited.has(cause)) {
+          break;
+        }
+        visited.add(cause);
+        causes.push(toError(cause));
+        current = cause;
+        depth += 1;
+      }
+      return causes;
+    }
+    function toError(value) {
+      if (value instanceof Error) {
+        return value;
+      }
+      const error = new Error(typeof value === "string" ? value : JSON.stringify(value));
+      if (typeof value === "object" && value != null) {
+        Object.assign(error, value);
+      }
+      return error;
+    }
+    function toErrorObject(error, parseLine) {
+      return {
+        nativeError: error,
+        name: error.name ?? "Error",
+        message: error.message ?? "",
+        stack: (0, stackTrace_js_1.buildStackTrace)(error, parseLine)
+      };
+    }
+  }
+});
+
+// node_modules/tslog/cjs/internal/jsonStringifyRecursive.js
+var require_jsonStringifyRecursive = __commonJS({
+  "node_modules/tslog/cjs/internal/jsonStringifyRecursive.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.jsonStringifyRecursive = jsonStringifyRecursive;
+    function jsonStringifyRecursive(obj) {
+      const cache = /* @__PURE__ */ new Set();
+      return JSON.stringify(obj, (key, value) => {
+        if (typeof value === "object" && value !== null) {
+          if (cache.has(value)) {
+            return "[Circular]";
+          }
+          cache.add(value);
+        }
+        if (typeof value === "bigint") {
+          return `${value}`;
+        }
+        if (typeof value === "undefined") {
+          return "[undefined]";
+        }
+        return value;
+      });
+    }
+  }
+});
+
+// node_modules/tslog/cjs/internal/util.inspect.polyfill.js
+var require_util_inspect_polyfill = __commonJS({
+  "node_modules/tslog/cjs/internal/util.inspect.polyfill.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.inspect = inspect;
+    exports2.formatValue = formatValue;
+    exports2.formatWithOptions = formatWithOptions;
+    var prettyLogStyles_js_1 = require_prettyLogStyles();
+    var jsonStringifyRecursive_js_1 = require_jsonStringifyRecursive();
+    function inspect(obj, opts) {
+      const ctx = {
+        seen: [],
+        stylize: stylizeNoColor
+      };
+      if (opts != null) {
+        _extend(ctx, opts);
+      }
+      if (isUndefined(ctx.showHidden))
+        ctx.showHidden = false;
+      if (isUndefined(ctx.depth))
+        ctx.depth = 2;
+      if (isUndefined(ctx.colors))
+        ctx.colors = true;
+      if (isUndefined(ctx.customInspect))
+        ctx.customInspect = true;
+      if (ctx.colors)
+        ctx.stylize = stylizeWithColor;
+      return formatValue(ctx, obj, ctx.depth);
+    }
+    inspect.colors = prettyLogStyles_js_1.prettyLogStyles;
+    inspect.styles = {
+      special: "cyan",
+      number: "yellow",
+      boolean: "yellow",
+      undefined: "grey",
+      null: "bold",
+      string: "green",
+      date: "magenta",
+      regexp: "red"
+    };
+    function isBoolean(arg) {
+      return typeof arg === "boolean";
+    }
+    function isUndefined(arg) {
+      return arg === void 0;
+    }
+    function stylizeNoColor(str) {
+      return str;
+    }
+    function stylizeWithColor(str, styleType) {
+      const style = inspect.styles[styleType];
+      if (style != null && inspect?.colors?.[style]?.[0] != null && inspect?.colors?.[style]?.[1] != null) {
+        return "\x1B[" + inspect.colors[style][0] + "m" + str + "\x1B[" + inspect.colors[style][1] + "m";
+      } else {
+        return str;
+      }
+    }
+    function isFunction(arg) {
+      return typeof arg === "function";
+    }
+    function isString(arg) {
+      return typeof arg === "string";
+    }
+    function isNumber(arg) {
+      return typeof arg === "number";
+    }
+    function isNull(arg) {
+      return arg === null;
+    }
+    function hasOwn(obj, prop) {
+      return Object.prototype.hasOwnProperty.call(obj, prop);
+    }
+    function isRegExp(re) {
+      return isObject(re) && objectToString(re) === "[object RegExp]";
+    }
+    function isObject(arg) {
+      return typeof arg === "object" && arg !== null;
+    }
+    function isError(e) {
+      return isObject(e) && (objectToString(e) === "[object Error]" || e instanceof Error);
+    }
+    function isDate(d) {
+      return isObject(d) && objectToString(d) === "[object Date]";
+    }
+    function objectToString(o) {
+      return Object.prototype.toString.call(o);
+    }
+    function arrayToHash(array) {
+      const hash = {};
+      array.forEach((val) => {
+        hash[val] = true;
+      });
+      return hash;
+    }
+    function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
+      const output = [];
+      for (let i = 0, l = value.length; i < l; ++i) {
+        if (hasOwn(value, String(i))) {
+          output.push(formatProperty(ctx, value, recurseTimes, visibleKeys, String(i), true));
+        } else {
+          output.push("");
+        }
+      }
+      keys.forEach((key) => {
+        if (!key.match(/^\d+$/)) {
+          output.push(formatProperty(ctx, value, recurseTimes, visibleKeys, key, true));
+        }
+      });
+      return output;
+    }
+    function formatError(value) {
+      return "[" + Error.prototype.toString.call(value) + "]";
+    }
+    function formatValue(ctx, value, recurseTimes = 0) {
+      if (ctx.customInspect && value != null && isFunction(value) && value?.inspect !== inspect && !(value?.constructor && value?.constructor.prototype === value)) {
+        if (typeof value.inspect !== "function" && value.toString != null) {
+          return value.toString();
+        }
+        let ret = value?.inspect(recurseTimes, ctx);
+        if (!isString(ret)) {
+          ret = formatValue(ctx, ret, recurseTimes);
+        }
+        return ret;
+      }
+      const primitive = formatPrimitive(ctx, value);
+      if (primitive) {
+        return primitive;
+      }
+      let keys = Object.keys(value);
+      const visibleKeys = arrayToHash(keys);
+      try {
+        if (ctx.showHidden && Object.getOwnPropertyNames) {
+          keys = Object.getOwnPropertyNames(value);
+        }
+      } catch {
+      }
+      if (isError(value) && (keys.indexOf("message") >= 0 || keys.indexOf("description") >= 0)) {
+        return formatError(value);
+      }
+      if (keys.length === 0) {
+        if (isFunction(ctx.stylize)) {
+          if (isFunction(value)) {
+            const name = value.name ? ": " + value.name : "";
+            return ctx.stylize("[Function" + name + "]", "special");
+          }
+          if (isRegExp(value)) {
+            return ctx.stylize(RegExp.prototype.toString.call(value), "regexp");
+          }
+          if (isDate(value)) {
+            return ctx.stylize(Date.prototype.toISOString.call(value), "date");
+          }
+          if (isError(value)) {
+            return formatError(value);
+          }
+        } else {
+          return value;
+        }
+      }
+      let base = "";
+      let array = false;
+      let braces = ["{\n", "\n}"];
+      if (Array.isArray(value)) {
+        array = true;
+        braces = ["[\n", "\n]"];
+      }
+      if (isFunction(value)) {
+        const n = value.name ? ": " + value.name : "";
+        base = " [Function" + n + "]";
+      }
+      if (isRegExp(value)) {
+        base = " " + RegExp.prototype.toString.call(value);
+      }
+      if (isDate(value)) {
+        base = " " + Date.prototype.toUTCString.call(value);
+      }
+      if (isError(value)) {
+        base = " " + formatError(value);
+      }
+      if (keys.length === 0 && (!array || value.length == 0)) {
+        return braces[0] + base + braces[1];
+      }
+      if (recurseTimes < 0) {
+        if (isRegExp(value)) {
+          return ctx.stylize(RegExp.prototype.toString.call(value), "regexp");
+        } else {
+          return ctx.stylize("[Object]", "special");
+        }
+      }
+      ctx.seen.push(value);
+      let output;
+      if (array) {
+        output = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
+      } else {
+        output = keys.map((key) => {
+          return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array);
+        });
+      }
+      ctx.seen.pop();
+      return reduceToSingleString(output, base, braces);
+    }
+    function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array) {
+      let name, str;
+      let desc = { value: void 0 };
+      try {
+        desc.value = value[key];
+      } catch {
+      }
+      try {
+        if (Object.getOwnPropertyDescriptor) {
+          desc = Object.getOwnPropertyDescriptor(value, key) || desc;
+        }
+      } catch {
+      }
+      if (desc.get) {
+        if (desc.set) {
+          str = ctx.stylize("[Getter/Setter]", "special");
+        } else {
+          str = ctx.stylize("[Getter]", "special");
+        }
+      } else {
+        if (desc.set) {
+          str = ctx.stylize("[Setter]", "special");
+        }
+      }
+      if (!hasOwn(visibleKeys, key)) {
+        name = "[" + key + "]";
+      }
+      if (!str) {
+        if (ctx.seen.indexOf(desc.value) < 0) {
+          if (isNull(recurseTimes)) {
+            str = formatValue(ctx, desc.value, void 0);
+          } else {
+            str = formatValue(ctx, desc.value, recurseTimes - 1);
+          }
+          if (str.indexOf("\n") > -1) {
+            if (array) {
+              str = str.split("\n").map((line) => {
+                return "  " + line;
+              }).join("\n").substr(2);
+            } else {
+              str = "\n" + str.split("\n").map((line) => {
+                return "   " + line;
+              }).join("\n");
+            }
+          }
+        } else {
+          str = ctx.stylize("[Circular]", "special");
+        }
+      }
+      if (isUndefined(name)) {
+        if (array && key.match(/^\d+$/)) {
+          return str;
+        }
+        name = JSON.stringify("" + key);
+        if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
+          name = name.substr(1, name.length - 2);
+          name = ctx.stylize(name, "name");
+        } else {
+          name = name.replace(/'/g, "\\'").replace(/\\"/g, "\\'").replace(/(^"|"$)/g, "'");
+          name = ctx.stylize(name, "string");
+        }
+      }
+      return name + ": " + str;
+    }
+    function formatPrimitive(ctx, value) {
+      if (isUndefined(value))
+        return ctx.stylize("undefined", "undefined");
+      if (isString(value)) {
+        const simple = "'" + JSON.stringify(value).replace(/^"|"$/g, "").replace(/'/g, "\\'").replace(/\\"/g, "\\'") + "'";
+        return ctx.stylize(simple, "string");
+      }
+      if (isNumber(value))
+        return ctx.stylize("" + value, "number");
+      if (isBoolean(value))
+        return ctx.stylize("" + value, "boolean");
+      if (isNull(value))
+        return ctx.stylize("null", "null");
+    }
+    function reduceToSingleString(output, base, braces) {
+      return braces[0] + (base === "" ? "" : base + "\n") + "  " + output.join(",\n  ") + " " + braces[1];
+    }
+    function _extend(origin, add) {
+      const typedOrigin = { ...origin };
+      if (!add || !isObject(add))
+        return origin;
+      const clonedAdd = { ...add };
+      const keys = Object.keys(add);
+      let i = keys.length;
+      while (i--) {
+        typedOrigin[keys[i]] = clonedAdd[keys[i]];
+      }
+      return typedOrigin;
+    }
+    function formatWithOptions(inspectOptions, ...args) {
+      const ctx = {
+        seen: [],
+        stylize: stylizeNoColor
+      };
+      if (inspectOptions != null) {
+        _extend(ctx, inspectOptions);
+      }
+      const first = args[0];
+      let a = 0;
+      let str = "";
+      let join = "";
+      if (typeof first === "string") {
+        if (args.length === 1) {
+          return first;
+        }
+        let tempStr;
+        let lastPos = 0;
+        for (let i = 0; i < first.length - 1; i++) {
+          if (first.charCodeAt(i) === 37) {
+            const nextChar = first.charCodeAt(++i);
+            if (a + 1 !== args.length) {
+              switch (nextChar) {
+                case 115: {
+                  const tempArg = args[++a];
+                  if (typeof tempArg === "number") {
+                    tempStr = formatPrimitive(ctx, tempArg);
+                  } else if (typeof tempArg === "bigint") {
+                    tempStr = formatPrimitive(ctx, tempArg);
+                  } else if (typeof tempArg !== "object" || tempArg === null) {
+                    tempStr = String(tempArg);
+                  } else {
+                    tempStr = inspect(tempArg, {
+                      ...inspectOptions,
+                      compact: 3,
+                      colors: false,
+                      depth: 0
+                    });
+                  }
+                  break;
+                }
+                case 106:
+                  tempStr = (0, jsonStringifyRecursive_js_1.jsonStringifyRecursive)(args[++a]);
+                  break;
+                case 100: {
+                  const tempNum = args[++a];
+                  if (typeof tempNum === "bigint") {
+                    tempStr = formatPrimitive(ctx, tempNum);
+                  } else if (typeof tempNum === "symbol") {
+                    tempStr = "NaN";
+                  } else {
+                    tempStr = formatPrimitive(ctx, tempNum);
+                  }
+                  break;
+                }
+                case 79:
+                  tempStr = inspect(args[++a], inspectOptions);
+                  break;
+                case 111:
+                  tempStr = inspect(args[++a], {
+                    ...inspectOptions,
+                    showHidden: true,
+                    showProxy: true,
+                    depth: 4
+                  });
+                  break;
+                case 105: {
+                  const tempInteger = args[++a];
+                  if (typeof tempInteger === "bigint") {
+                    tempStr = formatPrimitive(ctx, tempInteger);
+                  } else if (typeof tempInteger === "symbol") {
+                    tempStr = "NaN";
+                  } else {
+                    tempStr = formatPrimitive(ctx, parseInt(tempStr));
+                  }
+                  break;
+                }
+                case 102: {
+                  const tempFloat = args[++a];
+                  if (typeof tempFloat === "symbol") {
+                    tempStr = "NaN";
+                  } else {
+                    tempStr = formatPrimitive(ctx, parseInt(tempFloat));
+                  }
+                  break;
+                }
+                case 99:
+                  a += 1;
+                  tempStr = "";
+                  break;
+                case 37:
+                  str += first.slice(lastPos, i);
+                  lastPos = i + 1;
+                  continue;
+                default:
+                  continue;
+              }
+              if (lastPos !== i - 1) {
+                str += first.slice(lastPos, i - 1);
+              }
+              str += tempStr;
+              lastPos = i + 1;
+            } else if (nextChar === 37) {
+              str += first.slice(lastPos, i);
+              lastPos = i + 1;
+            }
+          }
+        }
+        if (lastPos !== 0) {
+          a++;
+          join = " ";
+          if (lastPos < first.length) {
+            str += first.slice(lastPos);
+          }
+        }
+      }
+      while (a < args.length) {
+        const value = args[a];
+        str += join;
+        str += typeof value !== "string" ? inspect(value, inspectOptions) : value;
+        join = " ";
+        a++;
+      }
+      return str;
+    }
+  }
+});
+
+// node_modules/tslog/cjs/internal/environment.js
+var require_environment = __commonJS({
+  "node_modules/tslog/cjs/internal/environment.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.safeGetCwd = safeGetCwd;
+    exports2.isBrowserEnvironment = isBrowserEnvironment;
+    exports2.consoleSupportsCssStyling = consoleSupportsCssStyling;
+    function safeGetCwd() {
+      try {
+        const nodeProcess = globalThis?.process;
+        if (typeof nodeProcess?.cwd === "function") {
+          return nodeProcess.cwd();
+        }
+      } catch {
+      }
+      try {
+        const deno = globalThis?.["Deno"];
+        if (typeof deno?.cwd === "function") {
+          return deno.cwd();
+        }
+      } catch {
+      }
+      return void 0;
+    }
+    function isBrowserEnvironment() {
+      return typeof window !== "undefined" && typeof document !== "undefined";
+    }
+    function consoleSupportsCssStyling() {
+      if (!isBrowserEnvironment()) {
+        return false;
+      }
+      const navigatorObj = globalThis?.navigator;
+      const userAgent = navigatorObj?.userAgent ?? "";
+      if (/firefox/i.test(userAgent)) {
+        return true;
+      }
+      const windowObj = globalThis;
+      if (windowObj?.CSS?.supports?.("color", "#000")) {
+        return true;
+      }
+      return /safari/i.test(userAgent) && !/chrome/i.test(userAgent);
+    }
+  }
+});
+
+// node_modules/tslog/cjs/interfaces.js
+var require_interfaces = __commonJS({
+  "node_modules/tslog/cjs/interfaces.js"(exports2) {
+    "use strict";
+    Object.defineProperty(exports2, "__esModule", { value: true });
+  }
+});
+
+// node_modules/tslog/cjs/BaseLogger.js
+var require_BaseLogger = __commonJS({
+  "node_modules/tslog/cjs/BaseLogger.js"(exports2) {
+    "use strict";
+    var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      var desc = Object.getOwnPropertyDescriptor(m, k);
+      if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+        desc = { enumerable: true, get: function() {
+          return m[k];
+        } };
+      }
+      Object.defineProperty(o, k2, desc);
+    }) : (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      o[k2] = m[k];
+    }));
+    var __exportStar = exports2 && exports2.__exportStar || function(m, exports3) {
+      for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports3, p)) __createBinding(exports3, m, p);
+    };
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.BaseLogger = exports2.loggerEnvironment = void 0;
+    exports2.createLoggerEnvironment = createLoggerEnvironment;
+    var urlToObj_js_1 = require_urlToObj();
+    var metaFormatting_js_1 = require_metaFormatting();
+    var errorUtils_js_1 = require_errorUtils();
+    var formatTemplate_js_1 = require_formatTemplate();
+    var util_inspect_polyfill_js_1 = require_util_inspect_polyfill();
+    var stackTrace_js_1 = require_stackTrace();
+    var environment_js_1 = require_environment();
+    var jsonStringifyRecursive_js_1 = require_jsonStringifyRecursive();
+    function createLoggerEnvironment() {
+      const runtimeInfo = detectRuntimeInfo();
+      const meta = createRuntimeMeta(runtimeInfo);
+      const usesBrowserStack = runtimeInfo.name === "browser" || runtimeInfo.name === "worker";
+      const callerIgnorePatterns = usesBrowserStack ? [...(0, stackTrace_js_1.getDefaultIgnorePatterns)(), /node_modules[\\/].*tslog/i] : [...(0, stackTrace_js_1.getDefaultIgnorePatterns)(), /node:(?:internal|vm)/i, /\binternal[\\/]/i];
+      let cachedCwd;
+      const environment = {
+        getMeta(logLevelId, logLevelName, stackDepthLevel, hideLogPositionForPerformance, name, parentNames) {
+          return Object.assign({}, meta, {
+            name,
+            parentNames,
+            date: /* @__PURE__ */ new Date(),
+            logLevelId,
+            logLevelName,
+            path: !hideLogPositionForPerformance ? environment.getCallerStackFrame(stackDepthLevel) : void 0
+          });
+        },
+        getCallerStackFrame(stackDepthLevel, error = new Error()) {
+          const frames = (0, stackTrace_js_1.buildStackTrace)(error, (line) => parseStackLine(line));
+          if (frames.length === 0) {
+            return {};
+          }
+          const autoIndex = (0, stackTrace_js_1.findFirstExternalFrameIndex)(frames, callerIgnorePatterns);
+          const useManualIndex = Number.isFinite(stackDepthLevel) && stackDepthLevel >= 0;
+          const resolvedIndex = useManualIndex ? (0, stackTrace_js_1.clampIndex)(stackDepthLevel, frames.length) : (0, stackTrace_js_1.clampIndex)(autoIndex, frames.length);
+          return frames[resolvedIndex] ?? {};
+        },
+        getErrorTrace(error) {
+          return (0, stackTrace_js_1.buildStackTrace)(error, (line) => parseStackLine(line));
+        },
+        isError(value) {
+          return isNativeError(value);
+        },
+        isBuffer(value) {
+          return typeof Buffer !== "undefined" && typeof Buffer.isBuffer === "function" ? Buffer.isBuffer(value) : false;
+        },
+        prettyFormatLogObj(maskedArgs, settings) {
+          return maskedArgs.reduce((result, arg) => {
+            if (environment.isError(arg)) {
+              result.errors.push(environment.prettyFormatErrorObj(arg, settings));
+            } else {
+              result.args.push(arg);
+            }
+            return result;
+          }, { args: [], errors: [] });
+        },
+        prettyFormatErrorObj(error, settings) {
+          const stackLines = formatStackFrames(environment.getErrorTrace(error), settings);
+          const causeSections = (0, errorUtils_js_1.collectErrorCauses)(error).map((cause, index) => {
+            const header = `Caused by (${index + 1}): ${cause.name ?? "Error"}${cause.message ? `: ${cause.message}` : ""}`;
+            const frames = formatStackFrames((0, stackTrace_js_1.buildStackTrace)(cause, (line) => parseStackLine(line)), settings);
+            return [header, ...frames].join("\n");
+          });
+          const placeholderValuesError = {
+            errorName: ` ${error.name} `,
+            errorMessage: formatErrorMessage(error),
+            errorStack: [...stackLines, ...causeSections].join("\n")
+          };
+          return (0, formatTemplate_js_1.formatTemplate)(settings, settings.prettyErrorTemplate, placeholderValuesError);
+        },
+        transportFormatted(logMetaMarkup, logArgs, logErrors, logMeta, settings) {
+          const prettyLogs = settings.stylePrettyLogs !== false;
+          const logErrorsStr = (logErrors.length > 0 && logArgs.length > 0 ? "\n" : "") + logErrors.join("\n");
+          const sanitizedMetaMarkup = stripAnsi(logMetaMarkup);
+          const metaMarkupForText = prettyLogs ? logMetaMarkup : sanitizedMetaMarkup;
+          if (shouldUseCss(prettyLogs)) {
+            settings.prettyInspectOptions.colors = false;
+            const formattedArgs2 = formatWithOptionsSafe(settings.prettyInspectOptions, logArgs);
+            const cssMeta = logMeta != null ? buildCssMetaOutput(settings, logMeta) : { text: sanitizedMetaMarkup, styles: [] };
+            const hasCssMeta = cssMeta.text.length > 0 && cssMeta.styles.length > 0;
+            const metaOutput = hasCssMeta ? cssMeta.text : sanitizedMetaMarkup;
+            const output = metaOutput + formattedArgs2 + logErrorsStr;
+            if (hasCssMeta) {
+              console.log(output, ...cssMeta.styles);
+            } else {
+              console.log(output);
+            }
+            return;
+          }
+          settings.prettyInspectOptions.colors = prettyLogs;
+          const formattedArgs = formatWithOptionsSafe(settings.prettyInspectOptions, logArgs);
+          console.log(metaMarkupForText + formattedArgs + logErrorsStr);
+        },
+        transportJSON(json) {
+          console.log((0, jsonStringifyRecursive_js_1.jsonStringifyRecursive)(json));
+        }
+      };
+      if (getNodeEnv() === "test") {
+        environment.__resetWorkingDirectoryCacheForTests = () => {
+          cachedCwd = void 0;
+        };
+      }
+      return environment;
+      function parseStackLine(line) {
+        return usesBrowserStack ? parseBrowserStackLine(line) : parseServerStackLine(line);
+      }
+      function parseServerStackLine(rawLine) {
+        if (typeof rawLine !== "string" || rawLine.length === 0) {
+          return void 0;
+        }
+        const trimmedLine = rawLine.trim();
+        if (!trimmedLine.includes(" at ") && !trimmedLine.startsWith("at ")) {
+          return void 0;
+        }
+        const line = trimmedLine.replace(/^at\s+/, "");
+        let method;
+        let location = line;
+        const methodMatch = line.match(/^(.*?)\s+\((.*)\)$/);
+        if (methodMatch) {
+          method = methodMatch[1];
+          location = methodMatch[2];
+        }
+        const sanitizedLocation = location.replace(/^\(/, "").replace(/\)$/, "");
+        const withoutQuery = sanitizedLocation.replace(/\?.*$/, "");
+        let fileLine;
+        let fileColumn;
+        let filePathCandidate = withoutQuery;
+        const segments = withoutQuery.split(":");
+        if (segments.length >= 3 && /^\d+$/.test(segments[segments.length - 1] ?? "")) {
+          fileColumn = segments.pop();
+          fileLine = segments.pop();
+          filePathCandidate = segments.join(":");
+        } else if (segments.length >= 2 && /^\d+$/.test(segments[segments.length - 1] ?? "")) {
+          fileLine = segments.pop();
+          filePathCandidate = segments.join(":");
+        }
+        let normalizedPath = filePathCandidate.replace(/^file:\/\//, "");
+        const cwd = getWorkingDirectory();
+        if (cwd != null && normalizedPath.startsWith(cwd)) {
+          normalizedPath = normalizedPath.slice(cwd.length);
+          normalizedPath = normalizedPath.replace(/^[\\/]/, "");
+        }
+        if (normalizedPath.length === 0) {
+          normalizedPath = filePathCandidate;
+        }
+        const normalizedPathWithoutLine = normalizeFilePath(normalizedPath);
+        const effectivePath = normalizedPathWithoutLine.length > 0 ? normalizedPathWithoutLine : normalizedPath;
+        const pathSegments = effectivePath.split(/\\|\//);
+        const fileName = pathSegments[pathSegments.length - 1];
+        const fileNameWithLine = fileName && fileLine ? `${fileName}:${fileLine}` : void 0;
+        const filePathWithLine = effectivePath && fileLine ? `${effectivePath}:${fileLine}` : void 0;
+        return {
+          fullFilePath: sanitizedLocation,
+          fileName,
+          fileNameWithLine,
+          fileColumn,
+          fileLine,
+          filePath: effectivePath,
+          filePathWithLine,
+          method
+        };
+      }
+      function parseBrowserStackLine(line) {
+        const href = globalThis.location?.origin;
+        if (line == null) {
+          return void 0;
+        }
+        const match = line.match(BROWSER_PATH_REGEX);
+        if (!match) {
+          return void 0;
+        }
+        const filePath = match[1]?.replace(/\?.*$/, "");
+        if (filePath == null) {
+          return void 0;
+        }
+        const pathParts = filePath.split("/");
+        const fileLine = match[2];
+        const fileColumn = match[3];
+        const fileName = pathParts[pathParts.length - 1];
+        return {
+          fullFilePath: href ? `${href}${filePath}` : filePath,
+          fileName,
+          fileNameWithLine: fileName && fileLine ? `${fileName}:${fileLine}` : void 0,
+          fileColumn,
+          fileLine,
+          filePath,
+          filePathWithLine: fileLine ? `${filePath}:${fileLine}` : void 0,
+          method: void 0
+        };
+      }
+      function formatStackFrames(frames, settings) {
+        return frames.map((stackFrame) => (0, formatTemplate_js_1.formatTemplate)(settings, settings.prettyErrorStackTemplate, { ...stackFrame }, true));
+      }
+      function formatErrorMessage(error) {
+        return Object.getOwnPropertyNames(error).filter((key) => key !== "stack" && key !== "cause").reduce((result, key) => {
+          const value = error[key];
+          if (typeof value === "function") {
+            return result;
+          }
+          result.push(String(value));
+          return result;
+        }, []).join(", ");
+      }
+      function shouldUseCss(prettyLogs) {
+        return prettyLogs && (runtimeInfo.name === "browser" || runtimeInfo.name === "worker") && (0, environment_js_1.consoleSupportsCssStyling)();
+      }
+      function stripAnsi(value) {
+        return value.replace(ANSI_REGEX, "");
+      }
+      function buildCssMetaOutput(settings, metaValue) {
+        if (metaValue == null) {
+          return { text: "", styles: [] };
+        }
+        const { template, placeholders } = (0, metaFormatting_js_1.buildPrettyMeta)(settings, metaValue);
+        const parts = [];
+        const styles = [];
+        let lastIndex = 0;
+        const placeholderRegex = /{{(.+?)}}/g;
+        let match;
+        while ((match = placeholderRegex.exec(template)) != null) {
+          if (match.index > lastIndex) {
+            parts.push(template.slice(lastIndex, match.index));
+          }
+          const key = match[1];
+          const rawValue = placeholders[key] != null ? String(placeholders[key]) : "";
+          const tokens = collectStyleTokens(settings.prettyLogStyles?.[key], rawValue);
+          const css = tokensToCss(tokens);
+          if (css.length > 0) {
+            parts.push(`%c${rawValue}%c`);
+            styles.push(css, "");
+          } else {
+            parts.push(rawValue);
+          }
+          lastIndex = placeholderRegex.lastIndex;
+        }
+        if (lastIndex < template.length) {
+          parts.push(template.slice(lastIndex));
+        }
+        return {
+          text: parts.join(""),
+          styles
+        };
+      }
+      function collectStyleTokens(style, value) {
+        if (style == null) {
+          return [];
+        }
+        if (typeof style === "string") {
+          return [style];
+        }
+        if (Array.isArray(style)) {
+          return style.flatMap((token) => collectStyleTokens(token, value));
+        }
+        if (typeof style === "object") {
+          const normalizedValue = value.trim();
+          const nextStyle = style[normalizedValue] ?? style["*"];
+          if (nextStyle == null) {
+            return [];
+          }
+          return collectStyleTokens(nextStyle, value);
+        }
+        return [];
+      }
+      function tokensToCss(tokens) {
+        const seen = /* @__PURE__ */ new Set();
+        const cssParts = [];
+        for (const token of tokens) {
+          const css = styleTokenToCss(token);
+          if (css != null && css.length > 0 && !seen.has(css)) {
+            seen.add(css);
+            cssParts.push(css);
+          }
+        }
+        return cssParts.join("; ");
+      }
+      function styleTokenToCss(token) {
+        const color = COLOR_TOKENS[token];
+        if (color != null) {
+          return `color: ${color}`;
+        }
+        const background = BACKGROUND_TOKENS[token];
+        if (background != null) {
+          return `background-color: ${background}`;
+        }
+        switch (token) {
+          case "bold":
+            return "font-weight: bold";
+          case "dim":
+            return "opacity: 0.75";
+          case "italic":
+            return "font-style: italic";
+          case "underline":
+            return "text-decoration: underline";
+          case "overline":
+            return "text-decoration: overline";
+          case "inverse":
+            return "filter: invert(1)";
+          case "hidden":
+            return "visibility: hidden";
+          case "strikethrough":
+            return "text-decoration: line-through";
+          default:
+            return void 0;
+        }
+      }
+      function getWorkingDirectory() {
+        if (cachedCwd === void 0) {
+          cachedCwd = (0, environment_js_1.safeGetCwd)() ?? null;
+        }
+        return cachedCwd ?? void 0;
+      }
+      function shouldCaptureHostname() {
+        return runtimeInfo.name === "node" || runtimeInfo.name === "deno" || runtimeInfo.name === "bun";
+      }
+      function shouldCaptureRuntimeVersion() {
+        return runtimeInfo.name === "node" || runtimeInfo.name === "deno" || runtimeInfo.name === "bun";
+      }
+      function createRuntimeMeta(info) {
+        if (info.name === "browser" || info.name === "worker") {
+          return {
+            runtime: info.name,
+            browser: info.userAgent
+          };
+        }
+        const metaStatic = {
+          runtime: info.name
+        };
+        if (shouldCaptureRuntimeVersion()) {
+          metaStatic.runtimeVersion = info.version ?? "unknown";
+        }
+        if (shouldCaptureHostname()) {
+          metaStatic.hostname = info.hostname ?? "unknown";
+        }
+        return metaStatic;
+      }
+      function formatWithOptionsSafe(options, args) {
+        try {
+          return (0, util_inspect_polyfill_js_1.formatWithOptions)(options, ...args);
+        } catch {
+          return args.map(stringifyFallback).join(" ");
+        }
+      }
+      function stringifyFallback(value) {
+        if (typeof value === "string") {
+          return value;
+        }
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
+        }
+      }
+      function normalizeFilePath(value) {
+        if (typeof value !== "string" || value.length === 0) {
+          return value;
+        }
+        const replaced = value.replace(/\\+/g, "\\").replace(/\\/g, "/");
+        const hasRootDoubleSlash = replaced.startsWith("//");
+        const hasLeadingSlash = replaced.startsWith("/") && !hasRootDoubleSlash;
+        const driveMatch = replaced.match(/^[A-Za-z]:/);
+        const drivePrefix = driveMatch ? driveMatch[0] : "";
+        const withoutDrive = drivePrefix ? replaced.slice(drivePrefix.length) : replaced;
+        const segments = withoutDrive.split("/");
+        const normalizedSegments = [];
+        for (const segment of segments) {
+          if (segment === "" || segment === ".") {
+            continue;
+          }
+          if (segment === "..") {
+            if (normalizedSegments.length > 0) {
+              normalizedSegments.pop();
+            }
+            continue;
+          }
+          normalizedSegments.push(segment);
+        }
+        let normalized = normalizedSegments.join("/");
+        if (hasRootDoubleSlash) {
+          normalized = `//${normalized}`;
+        } else if (hasLeadingSlash) {
+          normalized = `/${normalized}`;
+        } else if (drivePrefix !== "") {
+          normalized = `${drivePrefix}${normalized.length > 0 ? `/${normalized}` : ""}`;
+        }
+        if (normalized.length === 0) {
+          return value;
+        }
+        return normalized;
+      }
+      function detectRuntimeInfo() {
+        if ((0, environment_js_1.isBrowserEnvironment)()) {
+          const navigatorObj = globalThis.navigator;
+          return {
+            name: "browser",
+            userAgent: navigatorObj?.userAgent
+          };
+        }
+        const globalScope = globalThis;
+        if (typeof globalScope.importScripts === "function") {
+          return {
+            name: "worker",
+            userAgent: globalScope.navigator?.userAgent
+          };
+        }
+        const globalAny = globalThis;
+        if (globalAny.Bun != null) {
+          const bunVersion = globalAny.Bun.version;
+          return {
+            name: "bun",
+            version: bunVersion != null ? `bun/${bunVersion}` : void 0,
+            hostname: getEnvironmentHostname(globalAny.process, globalAny.Deno, globalAny.Bun, globalAny.location)
+          };
+        }
+        if (globalAny.Deno != null) {
+          const denoHostname = resolveDenoHostname(globalAny.Deno);
+          const denoVersion = globalAny.Deno?.version?.deno;
+          return {
+            name: "deno",
+            version: denoVersion != null ? `deno/${denoVersion}` : void 0,
+            hostname: denoHostname ?? getEnvironmentHostname(globalAny.process, globalAny.Deno, globalAny.Bun, globalAny.location)
+          };
+        }
+        if (globalAny.process?.versions?.node != null || globalAny.process?.version != null) {
+          return {
+            name: "node",
+            version: globalAny.process?.versions?.node ?? globalAny.process?.version,
+            hostname: getEnvironmentHostname(globalAny.process, globalAny.Deno, globalAny.Bun, globalAny.location)
+          };
+        }
+        if (globalAny.process != null) {
+          return {
+            name: "node",
+            version: "unknown",
+            hostname: getEnvironmentHostname(globalAny.process, globalAny.Deno, globalAny.Bun, globalAny.location)
+          };
+        }
+        return {
+          name: "unknown"
+        };
+      }
+      function getEnvironmentHostname(nodeProcess, deno, bun, location) {
+        const processHostname = nodeProcess?.env?.HOSTNAME ?? nodeProcess?.env?.HOST ?? nodeProcess?.env?.COMPUTERNAME;
+        if (processHostname != null && processHostname.length > 0) {
+          return processHostname;
+        }
+        const bunHostname = bun?.env?.HOSTNAME ?? bun?.env?.HOST ?? bun?.env?.COMPUTERNAME;
+        if (bunHostname != null && bunHostname.length > 0) {
+          return bunHostname;
+        }
+        try {
+          const denoEnvGet = deno?.env?.get;
+          if (typeof denoEnvGet === "function") {
+            const value = denoEnvGet("HOSTNAME");
+            if (value != null && value.length > 0) {
+              return value;
+            }
+          }
+        } catch {
+        }
+        if (location?.hostname != null && location.hostname.length > 0) {
+          return location.hostname;
+        }
+        return void 0;
+      }
+      function resolveDenoHostname(deno) {
+        try {
+          if (typeof deno?.hostname === "function") {
+            const value = deno.hostname();
+            if (value != null && value.length > 0) {
+              return value;
+            }
+          }
+        } catch {
+        }
+        const locationHostname = globalThis.location?.hostname;
+        if (locationHostname != null && locationHostname.length > 0) {
+          return locationHostname;
+        }
+        return void 0;
+      }
+      function getNodeEnv() {
+        const globalProcess = globalThis?.process;
+        return globalProcess?.env?.NODE_ENV;
+      }
+      function isNativeError(value) {
+        if (value instanceof Error) {
+          return true;
+        }
+        if (value != null && typeof value === "object") {
+          const objectTag = Object.prototype.toString.call(value);
+          if (/\[object .*Error\]/.test(objectTag)) {
+            return true;
+          }
+          const name = value.name;
+          if (typeof name === "string" && name.endsWith("Error")) {
+            return true;
+          }
+        }
+        return false;
+      }
+    }
+    var ANSI_REGEX = /\u001b\[[0-9;]*m/g;
+    var COLOR_TOKENS = {
+      black: "#000000",
+      red: "#ef5350",
+      green: "#66bb6a",
+      yellow: "#fdd835",
+      blue: "#42a5f5",
+      magenta: "#ab47bc",
+      cyan: "#26c6da",
+      white: "#fafafa",
+      blackBright: "#424242",
+      redBright: "#ff7043",
+      greenBright: "#81c784",
+      yellowBright: "#ffe082",
+      blueBright: "#64b5f6",
+      magentaBright: "#ce93d8",
+      cyanBright: "#4dd0e1",
+      whiteBright: "#ffffff"
+    };
+    var BACKGROUND_TOKENS = {
+      bgBlack: "#000000",
+      bgRed: "#ef5350",
+      bgGreen: "#66bb6a",
+      bgYellow: "#fdd835",
+      bgBlue: "#42a5f5",
+      bgMagenta: "#ab47bc",
+      bgCyan: "#26c6da",
+      bgWhite: "#fafafa",
+      bgBlackBright: "#424242",
+      bgRedBright: "#ff7043",
+      bgGreenBright: "#81c784",
+      bgYellowBright: "#ffe082",
+      bgBlueBright: "#64b5f6",
+      bgMagentaBright: "#ce93d8",
+      bgCyanBright: "#4dd0e1",
+      bgWhiteBright: "#ffffff"
+    };
+    var BROWSER_PATH_REGEX = /(?:(?:file|https?|global code|[^@]+)@)?(?:file:)?((?:\/[^:/]+){2,})(?::(\d+))?(?::(\d+))?/;
+    var runtime = createLoggerEnvironment();
+    exports2.loggerEnvironment = runtime;
+    __exportStar(require_interfaces(), exports2);
+    var BaseLogger = class {
+      constructor(settings, logObj, stackDepthLevel = Number.NaN) {
+        this.logObj = logObj;
+        this.stackDepthLevel = stackDepthLevel;
+        this.runtime = runtime;
+        this.maxErrorCauseDepth = 5;
+        this.settings = {
+          type: settings?.type ?? "pretty",
+          name: settings?.name,
+          parentNames: settings?.parentNames,
+          minLevel: settings?.minLevel ?? 0,
+          argumentsArrayName: settings?.argumentsArrayName,
+          hideLogPositionForProduction: settings?.hideLogPositionForProduction ?? false,
+          prettyLogTemplate: settings?.prettyLogTemplate ?? "{{yyyy}}.{{mm}}.{{dd}} {{hh}}:{{MM}}:{{ss}}:{{ms}}	{{logLevelName}}	{{filePathWithLine}}{{nameWithDelimiterPrefix}}	",
+          prettyErrorTemplate: settings?.prettyErrorTemplate ?? "\n{{errorName}} {{errorMessage}}\nerror stack:\n{{errorStack}}",
+          prettyErrorStackTemplate: settings?.prettyErrorStackTemplate ?? "  \u2022 {{fileName}}	{{method}}\n	{{filePathWithLine}}",
+          prettyErrorParentNamesSeparator: settings?.prettyErrorParentNamesSeparator ?? ":",
+          prettyErrorLoggerNameDelimiter: settings?.prettyErrorLoggerNameDelimiter ?? "	",
+          stylePrettyLogs: settings?.stylePrettyLogs ?? true,
+          prettyLogTimeZone: settings?.prettyLogTimeZone ?? "UTC",
+          prettyLogStyles: settings?.prettyLogStyles ?? {
+            logLevelName: {
+              "*": ["bold", "black", "bgWhiteBright", "dim"],
+              SILLY: ["bold", "white"],
+              TRACE: ["bold", "whiteBright"],
+              DEBUG: ["bold", "green"],
+              INFO: ["bold", "blue"],
+              WARN: ["bold", "yellow"],
+              ERROR: ["bold", "red"],
+              FATAL: ["bold", "redBright"]
+            },
+            dateIsoStr: "white",
+            filePathWithLine: "white",
+            name: ["white", "bold"],
+            nameWithDelimiterPrefix: ["white", "bold"],
+            nameWithDelimiterSuffix: ["white", "bold"],
+            errorName: ["bold", "bgRedBright", "whiteBright"],
+            fileName: ["yellow"],
+            fileNameWithLine: "white"
+          },
+          prettyInspectOptions: settings?.prettyInspectOptions ?? {
+            colors: true,
+            compact: false,
+            depth: Infinity
+          },
+          metaProperty: settings?.metaProperty ?? "_meta",
+          maskPlaceholder: settings?.maskPlaceholder ?? "[***]",
+          maskValuesOfKeys: settings?.maskValuesOfKeys ?? ["password"],
+          maskValuesOfKeysCaseInsensitive: settings?.maskValuesOfKeysCaseInsensitive ?? false,
+          maskValuesRegEx: settings?.maskValuesRegEx,
+          prefix: [...settings?.prefix ?? []],
+          attachedTransports: [...settings?.attachedTransports ?? []],
+          overwrite: {
+            mask: settings?.overwrite?.mask,
+            toLogObj: settings?.overwrite?.toLogObj,
+            addMeta: settings?.overwrite?.addMeta,
+            addPlaceholders: settings?.overwrite?.addPlaceholders,
+            formatMeta: settings?.overwrite?.formatMeta,
+            formatLogObj: settings?.overwrite?.formatLogObj,
+            transportFormatted: settings?.overwrite?.transportFormatted,
+            transportJSON: settings?.overwrite?.transportJSON
+          }
+        };
+        this.captureStackForMeta = this._shouldCaptureStack();
+      }
+      log(logLevelId, logLevelName, ...args) {
+        if (logLevelId < this.settings.minLevel) {
+          return;
+        }
+        const resolvedArgs = this._resolveLogArguments(args);
+        const logArgs = [...this.settings.prefix, ...resolvedArgs];
+        const maskedArgs = this.settings.overwrite?.mask != null ? this.settings.overwrite?.mask(logArgs) : this.settings.maskValuesOfKeys != null && this.settings.maskValuesOfKeys.length > 0 ? this._mask(logArgs) : logArgs;
+        const thisLogObj = this.logObj != null ? this._recursiveCloneAndExecuteFunctions(this.logObj) : void 0;
+        const logObj = this.settings.overwrite?.toLogObj != null ? this.settings.overwrite?.toLogObj(maskedArgs, thisLogObj) : this._toLogObj(maskedArgs, thisLogObj);
+        const logObjWithMeta = this.settings.overwrite?.addMeta != null ? this.settings.overwrite?.addMeta(logObj, logLevelId, logLevelName) : this._addMetaToLogObj(logObj, logLevelId, logLevelName);
+        const logMeta = logObjWithMeta?.[this.settings.metaProperty];
+        let logMetaMarkup;
+        let logArgsAndErrorsMarkup = void 0;
+        if (this.settings.overwrite?.formatMeta != null) {
+          logMetaMarkup = this.settings.overwrite?.formatMeta(logObjWithMeta?.[this.settings.metaProperty]);
+        }
+        if (this.settings.overwrite?.formatLogObj != null) {
+          logArgsAndErrorsMarkup = this.settings.overwrite?.formatLogObj(maskedArgs, this.settings);
+        }
+        if (this.settings.type === "pretty") {
+          logMetaMarkup = logMetaMarkup ?? this._prettyFormatLogObjMeta(logObjWithMeta?.[this.settings.metaProperty]);
+          logArgsAndErrorsMarkup = logArgsAndErrorsMarkup ?? runtime.prettyFormatLogObj(maskedArgs, this.settings);
+        }
+        if (logMetaMarkup != null && logArgsAndErrorsMarkup != null) {
+          if (this.settings.overwrite?.transportFormatted != null) {
+            const transport = this.settings.overwrite.transportFormatted;
+            const declaredParams = transport.length;
+            if (declaredParams < 4) {
+              transport(logMetaMarkup, logArgsAndErrorsMarkup.args, logArgsAndErrorsMarkup.errors);
+            } else if (declaredParams === 4) {
+              transport(logMetaMarkup, logArgsAndErrorsMarkup.args, logArgsAndErrorsMarkup.errors, logMeta);
+            } else {
+              transport(logMetaMarkup, logArgsAndErrorsMarkup.args, logArgsAndErrorsMarkup.errors, logMeta, this.settings);
+            }
+          } else {
+            runtime.transportFormatted(logMetaMarkup, logArgsAndErrorsMarkup.args, logArgsAndErrorsMarkup.errors, logMeta, this.settings);
+          }
+        } else {
+          if (this.settings.overwrite?.transportJSON != null) {
+            this.settings.overwrite.transportJSON(logObjWithMeta);
+          } else if (this.settings.type !== "hidden") {
+            runtime.transportJSON(logObjWithMeta);
+          }
+        }
+        if (this.settings.attachedTransports != null && this.settings.attachedTransports.length > 0) {
+          this.settings.attachedTransports.forEach((transportLogger) => {
+            transportLogger(logObjWithMeta);
+          });
+        }
+        return logObjWithMeta;
+      }
+      attachTransport(transportLogger) {
+        this.settings.attachedTransports.push(transportLogger);
+      }
+      getSubLogger(settings, logObj) {
+        const subLoggerSettings = {
+          ...this.settings,
+          ...settings,
+          parentNames: this.settings?.parentNames != null && this.settings?.name != null ? [...this.settings.parentNames, this.settings.name] : this.settings?.name != null ? [this.settings.name] : void 0,
+          prefix: [...this.settings.prefix, ...settings?.prefix ?? []]
+        };
+        const subLogger = new this.constructor(subLoggerSettings, logObj ?? this.logObj, this.stackDepthLevel);
+        return subLogger;
+      }
+      _mask(args) {
+        const maskKeys = this._getMaskKeys();
+        return args?.map((arg) => {
+          return this._recursiveCloneAndMaskValuesOfKeys(arg, maskKeys);
+        });
+      }
+      _getMaskKeys() {
+        const maskKeys = this.settings.maskValuesOfKeys ?? [];
+        const signature = maskKeys.map(String).join("|");
+        if (this.settings.maskValuesOfKeysCaseInsensitive === true) {
+          if (this.maskKeysCache?.source === maskKeys && this.maskKeysCache.caseInsensitive === true && this.maskKeysCache.signature === signature) {
+            return this.maskKeysCache.normalized;
+          }
+          const normalized = maskKeys.map((key) => typeof key === "string" ? key.toLowerCase() : String(key).toLowerCase());
+          this.maskKeysCache = {
+            source: maskKeys,
+            caseInsensitive: true,
+            normalized,
+            signature
+          };
+          return normalized;
+        }
+        this.maskKeysCache = {
+          source: maskKeys,
+          caseInsensitive: false,
+          normalized: maskKeys,
+          signature
+        };
+        return maskKeys;
+      }
+      _resolveLogArguments(args) {
+        if (args.length === 1 && typeof args[0] === "function") {
+          const candidate = args[0];
+          if (candidate.length === 0) {
+            const result = candidate();
+            return Array.isArray(result) ? result : [result];
+          }
+        }
+        return args;
+      }
+      _recursiveCloneAndMaskValuesOfKeys(source, keys, seen = []) {
+        if (seen.includes(source)) {
+          return { ...source };
+        }
+        if (typeof source === "object" && source !== null) {
+          seen.push(source);
+        }
+        if (runtime.isError(source) || runtime.isBuffer(source)) {
+          return source;
+        } else if (source instanceof Map) {
+          return new Map(source);
+        } else if (source instanceof Set) {
+          return new Set(source);
+        } else if (Array.isArray(source)) {
+          return source.map((item) => this._recursiveCloneAndMaskValuesOfKeys(item, keys, seen));
+        } else if (source instanceof Date) {
+          return new Date(source.getTime());
+        } else if (source instanceof URL) {
+          return (0, urlToObj_js_1.urlToObject)(source);
+        } else if (source !== null && typeof source === "object") {
+          const baseObject = runtime.isError(source) ? this._cloneError(source) : Object.create(Object.getPrototypeOf(source));
+          return Object.getOwnPropertyNames(source).reduce((o, prop) => {
+            const lookupKey = this.settings?.maskValuesOfKeysCaseInsensitive !== true ? prop : typeof prop === "string" ? prop.toLowerCase() : String(prop).toLowerCase();
+            o[prop] = keys.includes(lookupKey) ? this.settings.maskPlaceholder : (() => {
+              try {
+                return this._recursiveCloneAndMaskValuesOfKeys(source[prop], keys, seen);
+              } catch {
+                return null;
+              }
+            })();
+            return o;
+          }, baseObject);
+        } else {
+          if (typeof source === "string") {
+            let modifiedSource = source;
+            for (const regEx of this.settings?.maskValuesRegEx || []) {
+              modifiedSource = modifiedSource.replace(regEx, this.settings?.maskPlaceholder || "");
+            }
+            return modifiedSource;
+          }
+          return source;
+        }
+      }
+      _recursiveCloneAndExecuteFunctions(source, seen = []) {
+        if (this.isObjectOrArray(source) && seen.includes(source)) {
+          return this.shallowCopy(source);
+        }
+        if (this.isObjectOrArray(source)) {
+          seen.push(source);
+        }
+        if (Array.isArray(source)) {
+          return source.map((item) => this._recursiveCloneAndExecuteFunctions(item, seen));
+        } else if (source instanceof Date) {
+          return new Date(source.getTime());
+        } else if (this.isObject(source)) {
+          return Object.getOwnPropertyNames(source).reduce((o, prop) => {
+            const descriptor = Object.getOwnPropertyDescriptor(source, prop);
+            if (descriptor) {
+              Object.defineProperty(o, prop, descriptor);
+              const value = source[prop];
+              o[prop] = typeof value === "function" ? value() : this._recursiveCloneAndExecuteFunctions(value, seen);
+            }
+            return o;
+          }, Object.create(Object.getPrototypeOf(source)));
+        } else {
+          return source;
+        }
+      }
+      isObjectOrArray(value) {
+        return typeof value === "object" && value !== null;
+      }
+      isObject(value) {
+        return typeof value === "object" && !Array.isArray(value) && value !== null;
+      }
+      shallowCopy(source) {
+        if (Array.isArray(source)) {
+          return [...source];
+        } else {
+          return { ...source };
+        }
+      }
+      _toLogObj(args, clonedLogObj = {}) {
+        args = args?.map((arg) => runtime.isError(arg) ? this._toErrorObject(arg) : arg);
+        if (this.settings.argumentsArrayName == null) {
+          if (args.length === 1 && !Array.isArray(args[0]) && runtime.isBuffer(args[0]) !== true && !(args[0] instanceof Date)) {
+            clonedLogObj = typeof args[0] === "object" && args[0] != null ? { ...args[0], ...clonedLogObj } : { 0: args[0], ...clonedLogObj };
+          } else {
+            clonedLogObj = { ...clonedLogObj, ...args };
+          }
+        } else {
+          clonedLogObj = {
+            ...clonedLogObj,
+            [this.settings.argumentsArrayName]: args
+          };
+        }
+        return clonedLogObj;
+      }
+      _cloneError(error) {
+        const cloned = new error.constructor();
+        Object.getOwnPropertyNames(error).forEach((key) => {
+          cloned[key] = error[key];
+        });
+        return cloned;
+      }
+      _toErrorObject(error, depth = 0, seen = /* @__PURE__ */ new Set()) {
+        if (!seen.has(error)) {
+          seen.add(error);
+        }
+        const errorObject = {
+          nativeError: error,
+          name: error.name ?? "Error",
+          message: error.message,
+          stack: runtime.getErrorTrace(error)
+        };
+        if (depth >= this.maxErrorCauseDepth) {
+          return errorObject;
+        }
+        const causeValue = error.cause;
+        if (causeValue != null) {
+          const normalizedCause = (0, errorUtils_js_1.toError)(causeValue);
+          if (!seen.has(normalizedCause)) {
+            errorObject.cause = this._toErrorObject(normalizedCause, depth + 1, seen);
+          }
+        }
+        return errorObject;
+      }
+      _addMetaToLogObj(logObj, logLevelId, logLevelName) {
+        return {
+          ...logObj,
+          [this.settings.metaProperty]: runtime.getMeta(logLevelId, logLevelName, this.stackDepthLevel, !this.captureStackForMeta, this.settings.name, this.settings.parentNames)
+        };
+      }
+      _shouldCaptureStack() {
+        if (this.settings.hideLogPositionForProduction) {
+          return false;
+        }
+        if (this.settings.type === "json") {
+          return true;
+        }
+        const template = this.settings.prettyLogTemplate ?? "";
+        const stackPlaceholders = /{{\s*(file(Name|Path|Line|PathWithLine|NameWithLine)|fullFilePath)\s*}}/;
+        if (stackPlaceholders.test(template)) {
+          return true;
+        }
+        return false;
+      }
+      _prettyFormatLogObjMeta(logObjMeta) {
+        return (0, metaFormatting_js_1.buildPrettyMeta)(this.settings, logObjMeta).text;
+      }
+    };
+    exports2.BaseLogger = BaseLogger;
+  }
+});
+
+// node_modules/tslog/cjs/index.js
+var require_cjs = __commonJS({
+  "node_modules/tslog/cjs/index.js"(exports2) {
+    "use strict";
+    var __createBinding = exports2 && exports2.__createBinding || (Object.create ? (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      var desc = Object.getOwnPropertyDescriptor(m, k);
+      if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+        desc = { enumerable: true, get: function() {
+          return m[k];
+        } };
+      }
+      Object.defineProperty(o, k2, desc);
+    }) : (function(o, m, k, k2) {
+      if (k2 === void 0) k2 = k;
+      o[k2] = m[k];
+    }));
+    var __exportStar = exports2 && exports2.__exportStar || function(m, exports3) {
+      for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports3, p)) __createBinding(exports3, m, p);
+    };
+    Object.defineProperty(exports2, "__esModule", { value: true });
+    exports2.Logger = void 0;
+    var BaseLogger_js_1 = require_BaseLogger();
+    __exportStar(require_interfaces(), exports2);
+    __exportStar(require_BaseLogger(), exports2);
+    var Logger = class extends BaseLogger_js_1.BaseLogger {
+      constructor(settings, logObj) {
+        const isBrowser = typeof window !== "undefined" && typeof document !== "undefined";
+        const normalizedSettings = { ...settings ?? {} };
+        if (isBrowser) {
+          normalizedSettings.stylePrettyLogs = settings?.stylePrettyLogs ?? true;
+        }
+        super(normalizedSettings, logObj, Number.NaN);
+      }
+      log(logLevelId, logLevelName, ...args) {
+        return super.log(logLevelId, logLevelName, ...args);
+      }
+      silly(...args) {
+        return super.log(0, "SILLY", ...args);
+      }
+      trace(...args) {
+        return super.log(1, "TRACE", ...args);
+      }
+      debug(...args) {
+        return super.log(2, "DEBUG", ...args);
+      }
+      info(...args) {
+        return super.log(3, "INFO", ...args);
+      }
+      warn(...args) {
+        return super.log(4, "WARN", ...args);
+      }
+      error(...args) {
+        return super.log(5, "ERROR", ...args);
+      }
+      fatal(...args) {
+        return super.log(6, "FATAL", ...args);
+      }
+      getSubLogger(settings, logObj) {
+        return super.getSubLogger(settings, logObj);
+      }
+    };
+    exports2.Logger = Logger;
+  }
+});
+
 // node_modules/@slack/webhook/dist/errors.js
 var require_errors4 = __commonJS({
   "node_modules/@slack/webhook/dist/errors.js"(exports2) {
@@ -45973,45 +46125,6 @@ var require_get_proto = __commonJS({
   }
 });
 
-// node_modules/async-function/index.js
-var require_async_function = __commonJS({
-  "node_modules/async-function/index.js"(exports2, module2) {
-    "use strict";
-    var cached = (
-      /** @type {import('.').AsyncFunctionConstructor} */
-      async function() {
-      }.constructor
-    );
-    module2.exports = () => cached;
-  }
-});
-
-// node_modules/generator-function/index.js
-var require_generator_function = __commonJS({
-  "node_modules/generator-function/index.js"(exports2, module2) {
-    "use strict";
-    var cached = (
-      /** @type {GeneratorFunctionConstructor} */
-      function* () {
-      }.constructor
-    );
-    module2.exports = () => cached;
-  }
-});
-
-// node_modules/async-generator-function/index.js
-var require_async_generator_function = __commonJS({
-  "node_modules/async-generator-function/index.js"(exports2, module2) {
-    "use strict";
-    var cached = (
-      /** @type {import('.').AsyncGeneratorFunctionConstructor} */
-      async function* () {
-      }.constructor
-    );
-    module2.exports = () => cached;
-  }
-});
-
 // node_modules/hasown/index.js
 var require_hasown = __commonJS({
   "node_modules/hasown/index.js"(exports2, module2) {
@@ -46043,6 +46156,13 @@ var require_get_intrinsic = __commonJS({
     var pow = require_pow();
     var round = require_round();
     var sign = require_sign();
+    var $Function = Function;
+    var getEvalledConstructor = function(expressionSyntax) {
+      try {
+        return $Function('"use strict"; return (' + expressionSyntax + ").constructor;")();
+      } catch (e) {
+      }
+    };
     var $gOPD = require_gopd();
     var $defineProperty = require_es_define_property();
     var throwTypeError = function() {
@@ -46098,7 +46218,7 @@ var require_get_intrinsic = __commonJS({
       "%Float32Array%": typeof Float32Array === "undefined" ? undefined2 : Float32Array,
       "%Float64Array%": typeof Float64Array === "undefined" ? undefined2 : Float64Array,
       "%FinalizationRegistry%": typeof FinalizationRegistry === "undefined" ? undefined2 : FinalizationRegistry,
-      "%Function%": Function,
+      "%Function%": $Function,
       "%GeneratorFunction%": needsEval,
       "%Int8Array%": typeof Int8Array === "undefined" ? undefined2 : Int8Array,
       "%Int16Array%": typeof Int16Array === "undefined" ? undefined2 : Int16Array,
@@ -46161,17 +46281,14 @@ var require_get_intrinsic = __commonJS({
       }
     }
     var errorProto;
-    var getAsyncFunction = require_async_function();
-    var getGeneratorFunction = require_generator_function();
-    var getAsyncGeneratorFunction = require_async_generator_function();
     var doEval = function doEval2(name) {
       var value;
       if (name === "%AsyncFunction%") {
-        value = getAsyncFunction() || void undefined2;
+        value = getEvalledConstructor("async function () {}");
       } else if (name === "%GeneratorFunction%") {
-        value = getGeneratorFunction() || void undefined2;
+        value = getEvalledConstructor("function* () {}");
       } else if (name === "%AsyncGeneratorFunction%") {
-        value = getAsyncGeneratorFunction() || void undefined2;
+        value = getEvalledConstructor("async function* () {}");
       } else if (name === "%AsyncGenerator%") {
         var fn = doEval2("%AsyncGeneratorFunction%");
         if (fn) {
@@ -47532,6 +47649,11 @@ var require_follow_redirects = __commonJS({
     } catch (error) {
       useNativeURL = error.code === "ERR_INVALID_URL";
     }
+    var sensitiveHeaders = [
+      "Authorization",
+      "Proxy-Authorization",
+      "Cookie"
+    ];
     var preservedUrlFields = [
       "auth",
       "host",
@@ -47596,6 +47718,7 @@ var require_follow_redirects = __commonJS({
           self2.emit("error", cause instanceof RedirectionError ? cause : new RedirectionError({ cause }));
         }
       };
+      this._headerFilter = new RegExp("^(?:" + sensitiveHeaders.concat(options.sensitiveHeaders).map(escapeRegex).join("|") + ")$", "i");
       this._performRequest();
     }
     RedirectableRequest.prototype = Object.create(Writable.prototype);
@@ -47733,6 +47856,9 @@ var require_follow_redirects = __commonJS({
       if (!options.headers) {
         options.headers = {};
       }
+      if (!isArray(options.sensitiveHeaders)) {
+        options.sensitiveHeaders = [];
+      }
       if (options.host) {
         if (!options.hostname) {
           options.hostname = options.host;
@@ -47838,7 +47964,7 @@ var require_follow_redirects = __commonJS({
       this._isRedirect = true;
       spreadUrlObject(redirectUrl, this._options);
       if (redirectUrl.protocol !== currentUrlParts.protocol && redirectUrl.protocol !== "https:" || redirectUrl.host !== currentHost && !isSubdomain(redirectUrl.host, currentHost)) {
-        removeMatchingHeaders(/^(?:(?:proxy-)?authorization|cookie)$/i, this._options.headers);
+        removeMatchingHeaders(this._headerFilter, this._options.headers);
       }
       if (isFunction(beforeRedirect)) {
         var responseDetails = {
@@ -47987,6 +48113,9 @@ var require_follow_redirects = __commonJS({
       var dot = subdomain.length - domain.length - 1;
       return dot > 0 && subdomain[dot] === "." && subdomain.endsWith(domain);
     }
+    function isArray(value) {
+      return value instanceof Array;
+    }
     function isString(value) {
       return typeof value === "string" || value instanceof String;
     }
@@ -47998,6 +48127,9 @@ var require_follow_redirects = __commonJS({
     }
     function isURL(value) {
       return URL2 && value instanceof URL2;
+    }
+    function escapeRegex(regex) {
+      return regex.replace(/[\]\\/()*+?.$]/g, "\\$&");
     }
     module2.exports = wrap({ http, https });
     module2.exports.wrap = wrap;
@@ -48015,6 +48147,7 @@ var require_axios = __commonJS({
     var https = require("https");
     var http2 = require("http2");
     var util = require("util");
+    var path = require("path");
     var followRedirects = require_follow_redirects();
     var zlib = require("zlib");
     var stream = require("stream");
@@ -48101,9 +48234,14 @@ var require_axios = __commonJS({
     var G = getGlobal();
     var FormDataCtor = typeof G.FormData !== "undefined" ? G.FormData : void 0;
     var isFormData = (thing) => {
-      let kind;
-      return thing && (FormDataCtor && thing instanceof FormDataCtor || isFunction$1(thing.append) && ((kind = kindOf(thing)) === "formdata" || // detect form-data instance
-      kind === "object" && isFunction$1(thing.toString) && thing.toString() === "[object FormData]"));
+      if (!thing) return false;
+      if (FormDataCtor && thing instanceof FormDataCtor) return true;
+      const proto = getPrototypeOf(thing);
+      if (!proto || proto === Object.prototype) return false;
+      if (!isFunction$1(thing.append)) return false;
+      const kind = kindOf(thing);
+      return kind === "formdata" || // detect form-data instance
+      kind === "object" && isFunction$1(thing.toString) && thing.toString() === "[object FormData]";
     };
     var isURLSearchParams = kindOfTest("URLSearchParams");
     var [isReadableStream, isRequest, isResponse, isHeaders] = ["ReadableStream", "Request", "Response", "Headers"].map(kindOfTest);
@@ -48531,15 +48669,16 @@ var require_axios = __commonJS({
     AxiosError.ERR_CANCELED = "ERR_CANCELED";
     AxiosError.ERR_NOT_SUPPORT = "ERR_NOT_SUPPORT";
     AxiosError.ERR_INVALID_URL = "ERR_INVALID_URL";
+    AxiosError.ERR_FORM_DATA_DEPTH_EXCEEDED = "ERR_FORM_DATA_DEPTH_EXCEEDED";
     function isVisitable(thing) {
       return utils$1.isPlainObject(thing) || utils$1.isArray(thing);
     }
     function removeBrackets(key) {
       return utils$1.endsWith(key, "[]") ? key.slice(0, -2) : key;
     }
-    function renderKey(path, key, dots) {
-      if (!path) return key;
-      return path.concat(key).map(function each(token, i) {
+    function renderKey(path2, key, dots) {
+      if (!path2) return key;
+      return path2.concat(key).map(function each(token, i) {
         token = removeBrackets(token);
         return !dots && i ? "[" + token + "]" : token;
       }).join(dots ? "." : "");
@@ -48567,6 +48706,7 @@ var require_axios = __commonJS({
       const dots = options.dots;
       const indexes = options.indexes;
       const _Blob = options.Blob || typeof Blob !== "undefined" && Blob;
+      const maxDepth = options.maxDepth === void 0 ? 100 : options.maxDepth;
       const useBlob = _Blob && utils$1.isSpecCompliantForm(formData);
       if (!utils$1.isFunction(visitor)) {
         throw new TypeError("visitor must be a function");
@@ -48587,13 +48727,13 @@ var require_axios = __commonJS({
         }
         return value;
       }
-      function defaultVisitor(value, key, path) {
+      function defaultVisitor(value, key, path2) {
         let arr = value;
         if (utils$1.isReactNative(formData) && utils$1.isReactNativeBlob(value)) {
-          formData.append(renderKey(path, key, dots), convertValue(value));
+          formData.append(renderKey(path2, key, dots), convertValue(value));
           return false;
         }
-        if (value && !path && typeof value === "object") {
+        if (value && !path2 && typeof value === "object") {
           if (utils$1.endsWith(key, "{}")) {
             key = metaTokens ? key : key.slice(0, -2);
             value = JSON.stringify(value);
@@ -48612,7 +48752,7 @@ var require_axios = __commonJS({
         if (isVisitable(value)) {
           return true;
         }
-        formData.append(renderKey(path, key, dots), convertValue(value));
+        formData.append(renderKey(path2, key, dots), convertValue(value));
         return false;
       }
       const stack = [];
@@ -48621,16 +48761,19 @@ var require_axios = __commonJS({
         convertValue,
         isVisitable
       });
-      function build(value, path) {
+      function build(value, path2, depth = 0) {
         if (utils$1.isUndefined(value)) return;
+        if (depth > maxDepth) {
+          throw new AxiosError("Object is too deeply nested (" + depth + " levels). Max depth: " + maxDepth, AxiosError.ERR_FORM_DATA_DEPTH_EXCEEDED);
+        }
         if (stack.indexOf(value) !== -1) {
-          throw Error("Circular reference detected in " + path.join("."));
+          throw Error("Circular reference detected in " + path2.join("."));
         }
         stack.push(value);
         utils$1.forEach(value, function each(el, key) {
-          const result = !(utils$1.isUndefined(el) || el === null) && visitor.call(formData, el, utils$1.isString(key) ? key.trim() : key, path, exposedHelpers);
+          const result = !(utils$1.isUndefined(el) || el === null) && visitor.call(formData, el, utils$1.isString(key) ? key.trim() : key, path2, exposedHelpers);
           if (result === true) {
-            build(el, path ? path.concat(key) : [key]);
+            build(el, path2 ? path2.concat(key) : [key], depth + 1);
           }
         });
         stack.pop();
@@ -48648,10 +48791,9 @@ var require_axios = __commonJS({
         "(": "%28",
         ")": "%29",
         "~": "%7E",
-        "%20": "+",
-        "%00": "\0"
+        "%20": "+"
       };
-      return encodeURIComponent(str).replace(/[!'()~]|%20|%00/g, function replacer(match) {
+      return encodeURIComponent(str).replace(/[!'()~]|%20/g, function replacer(match) {
         return charMap[match];
       });
     }
@@ -48819,7 +48961,7 @@ var require_axios = __commonJS({
     };
     function toURLEncodedForm(data, options) {
       return toFormData(data, new platform2.classes.URLSearchParams(), {
-        visitor: function(value, key, path, helpers) {
+        visitor: function(value, key, path2, helpers) {
           if (platform2.isNode && utils$1.isBuffer(value)) {
             this.append(key, value.toString("base64"));
             return false;
@@ -48847,15 +48989,15 @@ var require_axios = __commonJS({
       return obj;
     }
     function formDataToJSON(formData) {
-      function buildPath(path, value, target, index) {
-        let name = path[index++];
+      function buildPath(path2, value, target, index) {
+        let name = path2[index++];
         if (name === "__proto__") return true;
         const isNumericKey = Number.isFinite(+name);
-        const isLast = index >= path.length;
+        const isLast = index >= path2.length;
         name = !name && utils$1.isArray(target) ? target.length : name;
         if (isLast) {
           if (utils$1.hasOwnProp(target, name)) {
-            target[name] = [target[name], value];
+            target[name] = utils$1.isArray(target[name]) ? target[name].concat(value) : [target[name], value];
           } else {
             target[name] = value;
           }
@@ -48864,7 +49006,7 @@ var require_axios = __commonJS({
         if (!target[name] || !utils$1.isObject(target[name])) {
           target[name] = [];
         }
-        const result = buildPath(path, value, target[name], index);
+        const result = buildPath(path2, value, target[name], index);
         if (result && utils$1.isArray(target[name])) {
           target[name] = arrayToObject(target[name]);
         }
@@ -48879,6 +49021,7 @@ var require_axios = __commonJS({
       }
       return null;
     }
+    var own = (obj, key) => obj != null && utils$1.hasOwnProp(obj, key) ? obj[key] : void 0;
     function stringifySafely(rawValue, parser, encoder) {
       if (utils$1.isString(rawValue)) {
         try {
@@ -48918,14 +49061,16 @@ var require_axios = __commonJS({
         }
         let isFileList2;
         if (isObjectPayload) {
+          const formSerializer = own(this, "formSerializer");
           if (contentType.indexOf("application/x-www-form-urlencoded") > -1) {
-            return toURLEncodedForm(data, this.formSerializer).toString();
+            return toURLEncodedForm(data, formSerializer).toString();
           }
           if ((isFileList2 = utils$1.isFileList(data)) || contentType.indexOf("multipart/form-data") > -1) {
-            const _FormData = this.env && this.env.FormData;
+            const env = own(this, "env");
+            const _FormData = env && env.FormData;
             return toFormData(isFileList2 ? {
               "files[]": data
-            } : data, _FormData && new _FormData(), this.formSerializer);
+            } : data, _FormData && new _FormData(), formSerializer);
           }
         }
         if (isObjectPayload || hasJSONContentType) {
@@ -48935,21 +49080,22 @@ var require_axios = __commonJS({
         return data;
       }],
       transformResponse: [function transformResponse(data) {
-        const transitional = this.transitional || defaults.transitional;
+        const transitional = own(this, "transitional") || defaults.transitional;
         const forcedJSONParsing = transitional && transitional.forcedJSONParsing;
-        const JSONRequested = this.responseType === "json";
+        const responseType = own(this, "responseType");
+        const JSONRequested = responseType === "json";
         if (utils$1.isResponse(data) || utils$1.isReadableStream(data)) {
           return data;
         }
-        if (data && utils$1.isString(data) && (forcedJSONParsing && !this.responseType || JSONRequested)) {
+        if (data && utils$1.isString(data) && (forcedJSONParsing && !responseType || JSONRequested)) {
           const silentJSONParsing = transitional && transitional.silentJSONParsing;
           const strictJSONParsing = !silentJSONParsing && JSONRequested;
           try {
-            return JSON.parse(data, this.parseReviver);
+            return JSON.parse(data, own(this, "parseReviver"));
           } catch (e) {
             if (strictJSONParsing) {
               if (e.name === "SyntaxError") {
-                throw AxiosError.from(e, AxiosError.ERR_BAD_RESPONSE, this, null, this.response);
+                throw AxiosError.from(e, AxiosError.ERR_BAD_RESPONSE, this, null, own(this, "response"));
               }
               throw e;
             }
@@ -49009,14 +49155,37 @@ var require_axios = __commonJS({
       return parsed;
     };
     var $internals = /* @__PURE__ */ Symbol("internals");
+    var INVALID_HEADER_VALUE_CHARS_RE = /[^\x09\x20-\x7E\x80-\xFF]/g;
+    function trimSPorHTAB(str) {
+      let start = 0;
+      let end = str.length;
+      while (start < end) {
+        const code = str.charCodeAt(start);
+        if (code !== 9 && code !== 32) {
+          break;
+        }
+        start += 1;
+      }
+      while (end > start) {
+        const code = str.charCodeAt(end - 1);
+        if (code !== 9 && code !== 32) {
+          break;
+        }
+        end -= 1;
+      }
+      return start === 0 && end === str.length ? str : str.slice(start, end);
+    }
     function normalizeHeader(header) {
       return header && String(header).trim().toLowerCase();
+    }
+    function sanitizeHeaderValue(str) {
+      return trimSPorHTAB(str.replace(INVALID_HEADER_VALUE_CHARS_RE, ""));
     }
     function normalizeValue(value) {
       if (value === false || value == null) {
         return value;
       }
-      return utils$1.isArray(value) ? value.map(normalizeValue) : String(value).replace(/[\r\n]+$/, "");
+      return utils$1.isArray(value) ? value.map(normalizeValue) : sanitizeHeaderValue(String(value));
     }
     function parseTokens(str) {
       const tokens = /* @__PURE__ */ Object.create(null);
@@ -49285,12 +49454,12 @@ var require_axios = __commonJS({
     }
     function buildFullPath(baseURL, requestedURL, allowAbsoluteUrls) {
       let isRelativeUrl = !isAbsoluteURL(requestedURL);
-      if (baseURL && (isRelativeUrl || allowAbsoluteUrls == false)) {
+      if (baseURL && (isRelativeUrl || allowAbsoluteUrls === false)) {
         return combineURLs(baseURL, requestedURL);
       }
       return requestedURL;
     }
-    var DEFAULT_PORTS = {
+    var DEFAULT_PORTS$1 = {
       ftp: 21,
       gopher: 70,
       http: 80,
@@ -49315,7 +49484,7 @@ var require_axios = __commonJS({
       }
       proto = proto.split(":", 1)[0];
       hostname = hostname.replace(/:\d*$/, "");
-      port = parseInt(port) || DEFAULT_PORTS[proto] || 0;
+      port = parseInt(port) || DEFAULT_PORTS$1[proto] || 0;
       if (!shouldProxy(hostname, port)) {
         return "";
       }
@@ -49355,7 +49524,7 @@ var require_axios = __commonJS({
     function getEnv(key) {
       return process.env[key.toLowerCase()] || process.env[key.toUpperCase()] || "";
     }
-    var VERSION = "1.14.0";
+    var VERSION = "1.15.2";
     function parseProtocol(url2) {
       const match = /^([-+\w]{1,25})(:?\/\/|:)/.exec(url2);
       return match && match[1] || "";
@@ -49529,7 +49698,8 @@ var require_axios = __commonJS({
         if (isStringValue) {
           value = textEncoder.encode(String(value).replace(/\r?\n|\r\n?/g, CRLF));
         } else {
-          headers += `Content-Type: ${value.type || "application/octet-stream"}${CRLF}`;
+          const safeType = String(value.type || "application/octet-stream").replace(/[\r\n]/g, "");
+          headers += `Content-Type: ${safeType}${CRLF}`;
         }
         this.headers = textEncoder.encode(headers + CRLF);
         this.contentLength = isStringValue ? value.byteLength : value.size;
@@ -49624,6 +49794,112 @@ var require_axios = __commonJS({
         }, cb);
       } : fn;
     };
+    var LOOPBACK_HOSTNAMES = /* @__PURE__ */ new Set(["localhost"]);
+    var isIPv4Loopback = (host) => {
+      const parts = host.split(".");
+      if (parts.length !== 4) return false;
+      if (parts[0] !== "127") return false;
+      return parts.every((p) => /^\d+$/.test(p) && Number(p) >= 0 && Number(p) <= 255);
+    };
+    var isIPv6Loopback = (host) => {
+      if (host === "::1") return true;
+      const v4MappedDotted = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+      if (v4MappedDotted) return isIPv4Loopback(v4MappedDotted[1]);
+      const v4MappedHex = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+      if (v4MappedHex) {
+        const high = parseInt(v4MappedHex[1], 16);
+        return high >= 32512 && high <= 32767;
+      }
+      const groups = host.split(":");
+      if (groups.length === 8) {
+        for (let i = 0; i < 7; i++) {
+          if (!/^0+$/.test(groups[i])) return false;
+        }
+        return /^0*1$/.test(groups[7]);
+      }
+      return false;
+    };
+    var isLoopback = (host) => {
+      if (!host) return false;
+      if (LOOPBACK_HOSTNAMES.has(host)) return true;
+      if (isIPv4Loopback(host)) return true;
+      return isIPv6Loopback(host);
+    };
+    var DEFAULT_PORTS = {
+      http: 80,
+      https: 443,
+      ws: 80,
+      wss: 443,
+      ftp: 21
+    };
+    var parseNoProxyEntry = (entry) => {
+      let entryHost = entry;
+      let entryPort = 0;
+      if (entryHost.charAt(0) === "[") {
+        const bracketIndex = entryHost.indexOf("]");
+        if (bracketIndex !== -1) {
+          const host = entryHost.slice(1, bracketIndex);
+          const rest = entryHost.slice(bracketIndex + 1);
+          if (rest.charAt(0) === ":" && /^\d+$/.test(rest.slice(1))) {
+            entryPort = Number.parseInt(rest.slice(1), 10);
+          }
+          return [host, entryPort];
+        }
+      }
+      const firstColon = entryHost.indexOf(":");
+      const lastColon = entryHost.lastIndexOf(":");
+      if (firstColon !== -1 && firstColon === lastColon && /^\d+$/.test(entryHost.slice(lastColon + 1))) {
+        entryPort = Number.parseInt(entryHost.slice(lastColon + 1), 10);
+        entryHost = entryHost.slice(0, lastColon);
+      }
+      return [entryHost, entryPort];
+    };
+    var normalizeNoProxyHost = (hostname) => {
+      if (!hostname) {
+        return hostname;
+      }
+      if (hostname.charAt(0) === "[" && hostname.charAt(hostname.length - 1) === "]") {
+        hostname = hostname.slice(1, -1);
+      }
+      return hostname.replace(/\.+$/, "");
+    };
+    function shouldBypassProxy(location) {
+      let parsed;
+      try {
+        parsed = new URL(location);
+      } catch (_err) {
+        return false;
+      }
+      const noProxy = (process.env.no_proxy || process.env.NO_PROXY || "").toLowerCase();
+      if (!noProxy) {
+        return false;
+      }
+      if (noProxy === "*") {
+        return true;
+      }
+      const port = Number.parseInt(parsed.port, 10) || DEFAULT_PORTS[parsed.protocol.split(":", 1)[0]] || 0;
+      const hostname = normalizeNoProxyHost(parsed.hostname.toLowerCase());
+      return noProxy.split(/[\s,]+/).some((entry) => {
+        if (!entry) {
+          return false;
+        }
+        let [entryHost, entryPort] = parseNoProxyEntry(entry);
+        entryHost = normalizeNoProxyHost(entryHost);
+        if (!entryHost) {
+          return false;
+        }
+        if (entryPort && entryPort !== port) {
+          return false;
+        }
+        if (entryHost.charAt(0) === "*") {
+          entryHost = entryHost.slice(1);
+        }
+        if (entryHost.charAt(0) === ".") {
+          return hostname.endsWith(entryHost);
+        }
+        return hostname === entryHost || isLoopback(hostname) && isLoopback(entryHost);
+      });
+    }
     function speedometer(samplesCount, min) {
       samplesCount = samplesCount || 10;
       const bytes = new Array(samplesCount);
@@ -49693,19 +49969,19 @@ var require_axios = __commonJS({
       let bytesNotified = 0;
       const _speedometer = speedometer(50, 250);
       return throttle((e) => {
-        const loaded = e.loaded;
+        const rawLoaded = e.loaded;
         const total = e.lengthComputable ? e.total : void 0;
-        const progressBytes = loaded - bytesNotified;
+        const loaded = total != null ? Math.min(rawLoaded, total) : rawLoaded;
+        const progressBytes = Math.max(0, loaded - bytesNotified);
         const rate = _speedometer(progressBytes);
-        const inRange = loaded <= total;
-        bytesNotified = loaded;
+        bytesNotified = Math.max(bytesNotified, loaded);
         const data = {
           loaded,
           total,
           progress: total ? loaded / total : void 0,
           bytes: progressBytes,
           rate: rate ? rate : void 0,
-          estimated: rate && total && inRange ? (total - loaded) / rate : void 0,
+          estimated: rate && total ? (total - loaded) / rate : void 0,
           event: e,
           lengthComputable: total != null,
           [isDownloadStream ? "download" : "upload"]: true
@@ -49785,6 +50061,8 @@ var require_axios = __commonJS({
       https: httpsFollow
     } = followRedirects;
     var isHttps = /https:?/;
+    var kAxiosSocketListener = /* @__PURE__ */ Symbol("axios.http.socketListener");
+    var kAxiosCurrentReq = /* @__PURE__ */ Symbol("axios.http.currentReq");
     var supportedProtocols = platform2.protocols.map((protocol) => {
       return protocol + ":";
     });
@@ -49877,7 +50155,9 @@ var require_axios = __commonJS({
       if (!proxy && proxy !== false) {
         const proxyUrl = getProxyForUrl(location);
         if (proxyUrl) {
-          proxy = new URL(proxyUrl);
+          if (!shouldBypassProxy(location)) {
+            proxy = new URL(proxyUrl);
+          }
         }
       }
       if (proxy) {
@@ -49984,17 +50264,15 @@ var require_axios = __commonJS({
     };
     var httpAdapter = isHttpAdapterSupported && function httpAdapter2(config) {
       return wrapAsync(async function dispatchHttpRequest(resolve, reject, onDone) {
-        let {
-          data,
-          lookup,
-          family,
-          httpVersion = 1,
-          http2Options
-        } = config;
-        const {
-          responseType,
-          responseEncoding
-        } = config;
+        const own2 = (key) => utils$1.hasOwnProp(config, key) ? config[key] : void 0;
+        let data = own2("data");
+        let lookup = own2("lookup");
+        let family = own2("family");
+        let httpVersion = own2("httpVersion");
+        if (httpVersion === void 0) httpVersion = 1;
+        let http2Options = own2("http2Options");
+        const responseType = own2("responseType");
+        const responseEncoding = own2("responseEncoding");
         const method = config.method.toUpperCase();
         let isDone;
         let rejected = false;
@@ -50125,7 +50403,7 @@ var require_axios = __commonJS({
             tag: `axios-${VERSION}-boundary`,
             boundary: userBoundary && userBoundary[1] || void 0
           });
-        } else if (utils$1.isFormData(data) && utils$1.isFunction(data.getHeaders)) {
+        } else if (utils$1.isFormData(data) && utils$1.isFunction(data.getHeaders) && data.getHeaders !== Object.prototype.getHeaders) {
           headers.set(data.getHeaders());
           if (!headers.hasContentLength()) {
             try {
@@ -50171,9 +50449,10 @@ var require_axios = __commonJS({
           onUploadProgress && data.on("progress", flushOnFinish(data, progressEventDecorator(contentLength, progressEventReducer(asyncDecorator(onUploadProgress), false, 3))));
         }
         let auth = void 0;
-        if (config.auth) {
-          const username = config.auth.username || "";
-          const password = config.auth.password || "";
+        const configAuth = own2("auth");
+        if (configAuth) {
+          const username = configAuth.username || "";
+          const password = configAuth.password || "";
           auth = username + ":" + password;
         }
         if (!auth && parsed.username) {
@@ -50182,9 +50461,9 @@ var require_axios = __commonJS({
           auth = urlUsername + ":" + urlPassword;
         }
         auth && headers.delete("authorization");
-        let path;
+        let path$1;
         try {
-          path = buildURL(parsed.pathname + parsed.search, config.params, config.paramsSerializer).replace(/^\?/, "");
+          path$1 = buildURL(parsed.pathname + parsed.search, config.params, config.paramsSerializer).replace(/^\?/, "");
         } catch (err) {
           const customErr = new Error(err.message);
           customErr.config = config;
@@ -50193,8 +50472,8 @@ var require_axios = __commonJS({
           return reject(customErr);
         }
         headers.set("Accept-Encoding", "gzip, compress, deflate" + (isBrotliSupported ? ", br" : ""), false);
-        const options = {
-          path,
+        const options = Object.assign(/* @__PURE__ */ Object.create(null), {
+          path: path$1,
           method,
           headers: headers.toJSON(),
           agents: {
@@ -50205,11 +50484,22 @@ var require_axios = __commonJS({
           protocol,
           family,
           beforeRedirect: dispatchBeforeRedirect,
-          beforeRedirects: {},
+          beforeRedirects: /* @__PURE__ */ Object.create(null),
           http2Options
-        };
+        });
         !utils$1.isUndefined(lookup) && (options.lookup = lookup);
         if (config.socketPath) {
+          if (typeof config.socketPath !== "string") {
+            return reject(new AxiosError("socketPath must be a string", AxiosError.ERR_BAD_OPTION_VALUE, config));
+          }
+          if (config.allowedSocketPaths != null) {
+            const allowed = Array.isArray(config.allowedSocketPaths) ? config.allowedSocketPaths : [config.allowedSocketPaths];
+            const resolvedSocket = path.resolve(config.socketPath);
+            const isAllowed = allowed.some((entry) => typeof entry === "string" && path.resolve(entry) === resolvedSocket);
+            if (!isAllowed) {
+              return reject(new AxiosError(`socketPath "${config.socketPath}" is not permitted by allowedSocketPaths`, AxiosError.ERR_BAD_OPTION_VALUE, config));
+            }
+          }
           options.socketPath = config.socketPath;
         } else {
           options.hostname = parsed.hostname.startsWith("[") ? parsed.hostname.slice(1, -1) : parsed.hostname;
@@ -50222,16 +50512,18 @@ var require_axios = __commonJS({
         if (isHttp2) {
           transport = http2Transport;
         } else {
-          if (config.transport) {
-            transport = config.transport;
+          const configTransport = own2("transport");
+          if (configTransport) {
+            transport = configTransport;
           } else if (config.maxRedirects === 0) {
             transport = isHttpsRequest ? https : http;
           } else {
             if (config.maxRedirects) {
               options.maxRedirects = config.maxRedirects;
             }
-            if (config.beforeRedirect) {
-              options.beforeRedirects.config = config.beforeRedirect;
+            const configBeforeRedirect = own2("beforeRedirect");
+            if (configBeforeRedirect) {
+              options.beforeRedirects.config = configBeforeRedirect;
             }
             transport = isHttpsRequest ? httpsFollow : httpFollow;
           }
@@ -50241,9 +50533,7 @@ var require_axios = __commonJS({
         } else {
           options.maxBodyLength = Infinity;
         }
-        if (config.insecureHTTPParser) {
-          options.insecureHTTPParser = config.insecureHTTPParser;
-        }
+        options.insecureHTTPParser = Boolean(own2("insecureHTTPParser"));
         req = transport.request(options, function handleResponse(res) {
           if (req.destroyed) return;
           const streams = [res];
@@ -50291,6 +50581,23 @@ var require_axios = __commonJS({
             request: lastRequest
           };
           if (responseType === "stream") {
+            if (config.maxContentLength > -1) {
+              const limit = config.maxContentLength;
+              const source = responseStream;
+              async function* enforceMaxContentLength() {
+                let totalResponseBytes = 0;
+                for await (const chunk of source) {
+                  totalResponseBytes += chunk.length;
+                  if (totalResponseBytes > limit) {
+                    throw new AxiosError("maxContentLength size of " + limit + " exceeded", AxiosError.ERR_BAD_RESPONSE, config, lastRequest);
+                  }
+                  yield chunk;
+                }
+              }
+              responseStream = stream.Readable.from(enforceMaxContentLength(), {
+                objectMode: false
+              });
+            }
             response.data = responseStream;
             settle(resolve, reject, response);
           } else {
@@ -50352,6 +50659,21 @@ var require_axios = __commonJS({
         });
         req.on("socket", function handleRequestSocket(socket) {
           socket.setKeepAlive(true, 1e3 * 60);
+          if (!socket[kAxiosSocketListener]) {
+            socket.on("error", function handleSocketError(err) {
+              const current = socket[kAxiosCurrentReq];
+              if (current && !current.destroyed) {
+                current.destroy(err);
+              }
+            });
+            socket[kAxiosSocketListener] = true;
+          }
+          socket[kAxiosCurrentReq] = req;
+          req.once("close", function clearCurrentReq() {
+            if (socket[kAxiosCurrentReq] === req) {
+              socket[kAxiosCurrentReq] = null;
+            }
+          });
         });
         if (config.timeout) {
           const timeout = parseInt(config.timeout, 10);
@@ -50386,7 +50708,24 @@ var require_axios = __commonJS({
               abort(new CanceledError("Request stream has been aborted", config, req));
             }
           });
-          data.pipe(req);
+          let uploadStream = data;
+          if (config.maxBodyLength > -1 && config.maxRedirects === 0) {
+            const limit = config.maxBodyLength;
+            let bytesSent = 0;
+            uploadStream = stream.pipeline([data, new stream.Transform({
+              transform(chunk, _enc, cb) {
+                bytesSent += chunk.length;
+                if (bytesSent > limit) {
+                  return cb(new AxiosError("Request body larger than maxBodyLength limit", AxiosError.ERR_BAD_REQUEST, config, req));
+                }
+                cb(null, chunk);
+              }
+            })], utils$1.noop);
+            uploadStream.on("error", (err) => {
+              if (!req.destroyed) req.destroy(err);
+            });
+          }
+          uploadStream.pipe(req);
         } else {
           data && req.write(data);
           req.end();
@@ -50400,14 +50739,14 @@ var require_axios = __commonJS({
     var cookies = platform2.hasStandardBrowserEnv ? (
       // Standard browser envs support document.cookie
       {
-        write(name, value, expires, path, domain, secure, sameSite) {
+        write(name, value, expires, path2, domain, secure, sameSite) {
           if (typeof document === "undefined") return;
           const cookie = [`${name}=${encodeURIComponent(value)}`];
           if (utils$1.isNumber(expires)) {
             cookie.push(`expires=${new Date(expires).toUTCString()}`);
           }
-          if (utils$1.isString(path)) {
-            cookie.push(`path=${path}`);
+          if (utils$1.isString(path2)) {
+            cookie.push(`path=${path2}`);
           }
           if (utils$1.isString(domain)) {
             cookie.push(`domain=${domain}`);
@@ -50446,7 +50785,13 @@ var require_axios = __commonJS({
     } : thing;
     function mergeConfig(config1, config2) {
       config2 = config2 || {};
-      const config = {};
+      const config = /* @__PURE__ */ Object.create(null);
+      Object.defineProperty(config, "hasOwnProperty", {
+        value: Object.prototype.hasOwnProperty,
+        enumerable: false,
+        writable: true,
+        configurable: true
+      });
       function getMergedValue(target, source, prop, caseless) {
         if (utils$1.isPlainObject(target) && utils$1.isPlainObject(source)) {
           return utils$1.merge.call({
@@ -50479,9 +50824,9 @@ var require_axios = __commonJS({
         }
       }
       function mergeDirectKeys(a, b, prop) {
-        if (prop in config2) {
+        if (utils$1.hasOwnProp(config2, prop)) {
           return getMergedValue(a, b);
-        } else if (prop in config1) {
+        } else if (utils$1.hasOwnProp(config1, prop)) {
           return getMergedValue(void 0, a);
         }
       }
@@ -50512,6 +50857,7 @@ var require_axios = __commonJS({
         httpsAgent: defaultToConfig2,
         cancelToken: defaultToConfig2,
         socketPath: defaultToConfig2,
+        allowedSocketPaths: defaultToConfig2,
         responseEncoding: defaultToConfig2,
         validateStatus: mergeDirectKeys,
         headers: (a, b, prop) => mergeDeepProperties(headersToObject(a), headersToObject(b), prop, true)
@@ -50522,23 +50868,27 @@ var require_axios = __commonJS({
       }), function computeConfigValue(prop) {
         if (prop === "__proto__" || prop === "constructor" || prop === "prototype") return;
         const merge2 = utils$1.hasOwnProp(mergeMap, prop) ? mergeMap[prop] : mergeDeepProperties;
-        const configValue = merge2(config1[prop], config2[prop], prop);
+        const a = utils$1.hasOwnProp(config1, prop) ? config1[prop] : void 0;
+        const b = utils$1.hasOwnProp(config2, prop) ? config2[prop] : void 0;
+        const configValue = merge2(a, b, prop);
         utils$1.isUndefined(configValue) && merge2 !== mergeDirectKeys || (config[prop] = configValue);
       });
       return config;
     }
     var resolveConfig = (config) => {
       const newConfig = mergeConfig({}, config);
-      let {
-        data,
-        withXSRFToken,
-        xsrfHeaderName,
-        xsrfCookieName,
-        headers,
-        auth
-      } = newConfig;
+      const own2 = (key) => utils$1.hasOwnProp(newConfig, key) ? newConfig[key] : void 0;
+      const data = own2("data");
+      let withXSRFToken = own2("withXSRFToken");
+      const xsrfHeaderName = own2("xsrfHeaderName");
+      const xsrfCookieName = own2("xsrfCookieName");
+      let headers = own2("headers");
+      const auth = own2("auth");
+      const baseURL = own2("baseURL");
+      const allowAbsoluteUrls = own2("allowAbsoluteUrls");
+      const url2 = own2("url");
       newConfig.headers = headers = AxiosHeaders.from(headers);
-      newConfig.url = buildURL(buildFullPath(newConfig.baseURL, newConfig.url, newConfig.allowAbsoluteUrls), config.params, config.paramsSerializer);
+      newConfig.url = buildURL(buildFullPath(baseURL, url2, allowAbsoluteUrls), config.params, config.paramsSerializer);
       if (auth) {
         headers.set("Authorization", "Basic " + btoa((auth.username || "") + ":" + (auth.password ? unescape(encodeURIComponent(auth.password)) : "")));
       }
@@ -50556,8 +50906,11 @@ var require_axios = __commonJS({
         }
       }
       if (platform2.hasStandardBrowserEnv) {
-        withXSRFToken && utils$1.isFunction(withXSRFToken) && (withXSRFToken = withXSRFToken(newConfig));
-        if (withXSRFToken || withXSRFToken !== false && isURLSameOrigin(newConfig.url)) {
+        if (utils$1.isFunction(withXSRFToken)) {
+          withXSRFToken = withXSRFToken(newConfig);
+        }
+        const shouldSendXSRF = withXSRFToken === true || withXSRFToken == null && isURLSameOrigin(newConfig.url);
+        if (shouldSendXSRF) {
           const xsrfValue = xsrfHeaderName && xsrfCookieName && cookies.read(xsrfCookieName);
           if (xsrfValue) {
             headers.set(xsrfHeaderName, xsrfValue);
@@ -50850,16 +51203,18 @@ var require_axios = __commonJS({
       const encodeText = isFetchSupported && (typeof TextEncoder$1 === "function" ? /* @__PURE__ */ ((encoder) => (str) => encoder.encode(str))(new TextEncoder$1()) : async (str) => new Uint8Array(await new Request(str).arrayBuffer()));
       const supportsRequestStream = isRequestSupported && isReadableStreamSupported && test(() => {
         let duplexAccessed = false;
-        const body = new ReadableStream$1();
-        const hasContentType = new Request(platform2.origin, {
-          body,
+        const request = new Request(platform2.origin, {
+          body: new ReadableStream$1(),
           method: "POST",
           get duplex() {
             duplexAccessed = true;
             return "half";
           }
-        }).headers.has("Content-Type");
-        body.cancel();
+        });
+        const hasContentType = request.headers.has("Content-Type");
+        if (request.body != null) {
+          request.body.cancel();
+        }
         return duplexAccessed && !hasContentType;
       });
       const supportsResponseStream = isResponseSupported && isReadableStreamSupported && test(() => utils$1.isReadableStream(new Response("").body));
@@ -50948,6 +51303,12 @@ var require_axios = __commonJS({
             withCredentials = withCredentials ? "include" : "omit";
           }
           const isCredentialsSupported = isRequestSupported && "credentials" in Request.prototype;
+          if (utils$1.isFormData(data)) {
+            const contentType = headers.getContentType();
+            if (contentType && /^multipart\/form-data/i.test(contentType) && !/boundary=/i.test(contentType)) {
+              headers.delete("content-type");
+            }
+          }
           const resolvedOptions = {
             ...fetchOptions,
             signal: composedSignal,
@@ -51147,7 +51508,7 @@ var require_axios = __commonJS({
       let i = keys.length;
       while (i-- > 0) {
         const opt = keys[i];
-        const validator2 = schema[opt];
+        const validator2 = Object.prototype.hasOwnProperty.call(schema, opt) ? schema[opt] : void 0;
         if (validator2) {
           const value = options[opt];
           const result = value === void 0 || validator2(value, opt, options);
@@ -51189,12 +51550,23 @@ var require_axios = __commonJS({
           if (err instanceof Error) {
             let dummy = {};
             Error.captureStackTrace ? Error.captureStackTrace(dummy) : dummy = new Error();
-            const stack = dummy.stack ? dummy.stack.replace(/^.+\n/, "") : "";
+            const stack = (() => {
+              if (!dummy.stack) {
+                return "";
+              }
+              const firstNewlineIndex = dummy.stack.indexOf("\n");
+              return firstNewlineIndex === -1 ? "" : dummy.stack.slice(firstNewlineIndex + 1);
+            })();
             try {
               if (!err.stack) {
                 err.stack = stack;
-              } else if (stack && !String(err.stack).endsWith(stack.replace(/^.+\n.+\n/, ""))) {
-                err.stack += "\n" + stack;
+              } else if (stack) {
+                const firstNewlineIndex = stack.indexOf("\n");
+                const secondNewlineIndex = firstNewlineIndex === -1 ? -1 : stack.indexOf("\n", firstNewlineIndex + 1);
+                const stackWithoutTwoTopLines = secondNewlineIndex === -1 ? "" : stack.slice(secondNewlineIndex + 1);
+                if (!String(err.stack).endsWith(stackWithoutTwoTopLines)) {
+                  err.stack += "\n" + stack;
+                }
               }
             } catch (e) {
             }
@@ -51559,7 +51931,7 @@ var require_package = __commonJS({
   "node_modules/@slack/webhook/package.json"(exports2, module2) {
     module2.exports = {
       name: "@slack/webhook",
-      version: "7.0.8",
+      version: "7.0.9",
       description: "Official library for using the Slack Platform's Incoming Webhooks",
       author: "Slack Technologies, LLC",
       license: "MIT",
@@ -51603,7 +51975,7 @@ var require_package = __commonJS({
       dependencies: {
         "@slack/types": "^2.20.1",
         "@types/node": ">=18",
-        axios: "^1.13.5"
+        axios: "^1.15.0"
       },
       devDependencies: {
         nock: "^14.0.6"
@@ -51796,7 +52168,9 @@ var require_dist2 = __commonJS({
     __export(index_exports, {
       Color: () => Color2,
       FooterType: () => FooterType,
+      LogLevelItems: () => LogLevelItems,
       RepresentationType: () => RepresentationType2,
+      SarifFileExtensionItems: () => SarifFileExtensionItems,
       SarifToSlackClient: () => SarifToSlackClient2,
       SendIf: () => SendIf2
     });
@@ -51924,17 +52298,18 @@ var require_dist2 = __commonJS({
       }
     }
     var import_node_fs2 = require("fs");
-    var import_tslog = require_cjs();
     var import_zod2 = require_zod();
+    var stackTraceParser = __toESM2(require_stack_trace_parser_cjs());
+    var import_tslog = require_cjs();
     var import_zod = require_zod();
-    var version = "1.3.5";
-    var sha = "4b44572f95bfdaab5159a2bd89a3ed2b193b55aa";
-    var buildAt = "2026-04-04T14:25:40Z";
+    var version = "1.4.0";
+    var sha = "3b7ca554e41d0d7c94a7eeae079f3afc1d384c4d";
+    var buildAt = "2026-04-12T13:12:12Z";
     function logMetadata() {
-      const logger = new Logger(logMetadata.name);
-      logger.info(`version: ${version}`);
-      logger.info(`sha: ${sha}`);
-      logger.info(`built at: ${buildAt}`);
+      const logger = new Logger();
+      logger.debug(`version: ${version}`);
+      logger.debug(`sha: ${sha}`);
+      logger.debug(`built at: ${buildAt}`);
     }
     function isDebug() {
       const parseResult = import_zod.z.stringbool().safeParse(
@@ -51942,59 +52317,6 @@ var require_dist2 = __commonJS({
       );
       return parseResult.success && parseResult.data;
     }
-    var LogLevelItems = ["silly", "trace", "debug", "info", "warning", "error", "fatal"];
-    var Logger = class _Logger {
-      static APP_NAME = "@fabasoad/sarif-to-slack";
-      static DEFAULT_LOG_LEVEL = "info";
-      static DEFAULT_LOG_TEMPLATE = "[{{logLevelName}}] [{{name}}] {{dateIsoStr}} ";
-      static DEFAULT_LOG_COLORED = true;
-      _instance;
-      isLogLevel(v) {
-        return LogLevelItems.includes(v);
-      }
-      getMinLevel() {
-        let result = _Logger.DEFAULT_LOG_LEVEL;
-        if (isDebug()) {
-          result = "silly";
-        } else {
-          const parseResult = import_zod2.z.string().refine((v) => this.isLogLevel(v)).transform((v) => v).safeParse(process.env.SARIF_TO_SLACK_LOG_LEVEL);
-          if (parseResult.success) {
-            result = parseResult.data;
-          }
-        }
-        return LogLevelItems.findIndex((v) => v === result);
-      }
-      getLogTemplate() {
-        const result = import_zod2.z.string().safeParse(process.env.SARIF_TO_SLACK_LOG_TEMPLATE);
-        return result.success ? result.data : _Logger.DEFAULT_LOG_TEMPLATE;
-      }
-      getLogColored() {
-        const result = import_zod2.z.stringbool().safeParse(process.env.SARIF_TO_SLACK_LOG_COLORED);
-        return result.success ? result.data : _Logger.DEFAULT_LOG_COLORED;
-      }
-      constructor(memberName) {
-        this._instance = new import_tslog.Logger({
-          name: `${_Logger.APP_NAME}${memberName === void 0 ? "" : `::${memberName}`}`,
-          minLevel: this.getMinLevel(),
-          type: "pretty",
-          prettyLogTimeZone: "UTC",
-          prettyLogTemplate: this.getLogTemplate(),
-          stylePrettyLogs: this.getLogColored()
-        });
-      }
-      info(...args) {
-        this._instance.info(...args);
-      }
-      warn(...args) {
-        this._instance.warn(...args);
-      }
-      trace(...args) {
-        this._instance.trace(...args);
-      }
-      debug(...args) {
-        this._instance.debug(...args);
-      }
-    };
     var FooterType = /* @__PURE__ */ ((FooterType2) => {
       FooterType2["PlainText"] = "plain_text";
       FooterType2["Markdown"] = "mrkdwn";
@@ -52017,6 +52339,8 @@ var require_dist2 = __commonJS({
       RepresentationType22[RepresentationType22["TableGroupBySarifPerSeverity"] = 13] = "TableGroupBySarifPerSeverity";
       return RepresentationType22;
     })(RepresentationType2 || {});
+    var SarifFileExtensionItems = ["sarif", "json"];
+    var LogLevelItems = ["silly", "trace", "debug", "info", "warning", "error", "fatal"];
     var SecuritySeverity = /* @__PURE__ */ ((SecuritySeverity2) => {
       SecuritySeverity2[SecuritySeverity2["Unknown"] = 0] = "Unknown";
       SecuritySeverity2[SecuritySeverity2["None"] = 1] = "None";
@@ -52040,6 +52364,74 @@ var require_dist2 = __commonJS({
     var SecurityLevelValues = Object.values(SecurityLevel).filter(
       (v) => typeof v === "string"
     );
+    var globalState = {};
+    var Logger = class _Logger {
+      static DEFAULT_LOG_LEVEL = "info";
+      static DEFAULT_FUNC_NAME_POSITION = 2;
+      _instance;
+      getMinLevel(minLevel) {
+        let result = _Logger.DEFAULT_LOG_LEVEL;
+        if (isDebug()) {
+          result = "silly";
+        } else if (minLevel !== void 0) {
+          const parseResult = import_zod2.z.enum(LogLevelItems).safeParse(minLevel);
+          if (parseResult.success) {
+            result = parseResult.data;
+          }
+        }
+        return LogLevelItems.findIndex((v) => v === result);
+      }
+      composeLogHeader(name, logFunctionName, logFunctionNameOnPosition) {
+        let result = name;
+        if (logFunctionName === true) {
+          const pos = logFunctionNameOnPosition ?? _Logger.DEFAULT_FUNC_NAME_POSITION;
+          if (result === void 0) {
+            result = "";
+          } else {
+            result += "::";
+          }
+          const stackFrames = stackTraceParser.parse(
+            new Error().stack ?? ""
+          );
+          if (stackFrames.length > pos) {
+            result += stackFrames[pos].methodName;
+          }
+        }
+        return result;
+      }
+      constructor(overrides = {}) {
+        const opts = {
+          ...structuredClone(globalState.loggerOpts ?? {}),
+          ...overrides
+        };
+        const logName = this.composeLogHeader(
+          opts.name,
+          opts.logFunctionName,
+          opts.logFunctionNameOnPosition
+        );
+        const settings = {
+          minLevel: this.getMinLevel(opts.minLevel),
+          name: logName,
+          type: "pretty",
+          prettyLogTemplate: opts.prettyLogTemplate || (logName === void 0 ? "[{{logLevelName}}] {{dateIsoStr}} " : "[{{logLevelName}}] [{{name}}] {{dateIsoStr}} "),
+          prettyLogTimeZone: "UTC",
+          stylePrettyLogs: opts.stylePrettyLogs ?? true
+        };
+        this._instance = new import_tslog.Logger(settings);
+      }
+      info(...args) {
+        this._instance.info(...args);
+      }
+      warn(...args) {
+        this._instance.warn(...args);
+      }
+      trace(...args) {
+        this._instance.trace(...args);
+      }
+      debug(...args) {
+        this._instance.debug(...args);
+      }
+    };
     var import_node_fs = __toESM2(require("fs"));
     var path = __toESM2(require("path"));
     function listFiles(dir, recursive, extension, fileList = []) {
@@ -52057,10 +52449,10 @@ var require_dist2 = __commonJS({
       return fileList;
     }
     function extractListOfFiles(opts) {
-      const logger = new Logger(extractListOfFiles.name);
       if (!import_node_fs.default.existsSync(opts.path)) {
         throw new Error(`Provided path does not exist: ${opts.path}`);
       }
+      const logger = new Logger();
       const stats = import_node_fs.default.statSync(opts.path);
       if (stats.isDirectory()) {
         logger.info(`Provided path is a directory: ${opts.path}`);
@@ -52274,7 +52666,6 @@ ${summary2}`;
         this._cells = new Array(cellsCount);
       }
       header;
-      _logger = new Logger("Column");
       _cells;
       get total() {
         return this._cells.reduce((sum, c) => {
@@ -52294,7 +52685,9 @@ ${summary2}`;
           const width = this.width;
           this._cells.forEach((c) => c.setWidth(width));
         } else {
-          this._logger.warn(`Cell index out of range. Requested index: ${index}. Cells count: ${this._cells.length}.`);
+          const logger = new Logger();
+          ;
+          logger.warn(`Cell index out of range. Requested index: ${index}. Cells count: ${this._cells.length}.`);
         }
       }
     };
@@ -52329,7 +52722,6 @@ ${summary2}`;
       }
       _header;
       headerWidth;
-      _logger = new Logger("Row");
       _cells;
       _totalWidth;
       get total() {
@@ -52342,7 +52734,8 @@ ${summary2}`;
         if (index >= 0 && index < this._cells.length) {
           this._cells[index] = value;
         } else {
-          this._logger.warn(`Setting cell failed. Reason: index out of range. Requested index: ${index}. Cells count: ${this._cells.length}.`);
+          const logger = new Logger();
+          logger.warn(`Setting cell failed. Reason: index out of range. Requested index: ${index}. Cells count: ${this._cells.length}.`);
         }
       }
       get totalWidth() {
@@ -52436,7 +52829,6 @@ ${summary2}`;
       _keyBy;
       _keyPer;
       _values;
-      _logger = new Logger("TableGroupRepresentation");
       groupFindingsPer(findings) {
         return findings.reduce(
           (grouped, f) => {
@@ -52475,6 +52867,7 @@ ${summary2}`;
         }
       }
       compose() {
+        const logger = new Logger();
         const groupedBy = this.groupFindingsBy(this._model.findings);
         const table = new Table({
           main: this.title,
@@ -52490,7 +52883,7 @@ ${summary2}`;
           i++;
         }
         const result = this.codeBlock(table.toString());
-        this._logger.trace(result);
+        logger.trace(result);
         return result;
       }
     };
@@ -52672,6 +53065,7 @@ ${summary2}`;
        * property where CVSS score is also defined. This method tries to get level
        * from this "cvssv3_baseScore" property and if it fails to do so, then it tries
        * to get CVSS score in a common way.
+       * @internal
        */
       tryFindCvssScore() {
         return this.tryFindRuleProperty("cvssv3_baseScore") ?? super.tryFindCvssScore();
@@ -52703,7 +53097,6 @@ ${summary2}`;
       return new FindingImpl(opts);
     }
     var FindingImpl = class {
-      _logger = new Logger("FindingImpl");
       _runMetadata;
       _result;
       _sarifPath;
@@ -52749,7 +53142,9 @@ ${summary2}`;
           this._levelCache = this._processor.tryFindLevel();
         }
         if (this._levelCache === void 0) {
-          this._logger.debug(`Unknown level of ${this._rule?.id} rule`);
+          const logger = new Logger();
+          ;
+          logger.debug(`Unknown level of ${this._rule?.id} rule`);
           return 0;
         }
         switch (this._levelCache) {
@@ -52765,7 +53160,8 @@ ${summary2}`;
       }
       get severity() {
         if (this.cvssScore == null || this.cvssScore < 0 || this.cvssScore > 10) {
-          this._logger.debug(`Unsupported CVSS score ${this.cvssScore} in ${this._rule?.id} rule`);
+          const logger = new Logger();
+          logger.debug(`Unsupported CVSS score ${this.cvssScore} in ${this._rule?.id} rule`);
           return 0;
         }
         if (this.cvssScore >= 9) {
@@ -52795,7 +53191,7 @@ ${summary2}`;
       logger.trace(`'${prop}.${val}' property is not defined. Continue color identification...`);
     }
     function identifyColorCommon(findings, prop, none, unknown, color) {
-      const logger = new Logger(identifyColorCommon.name);
+      const logger = new Logger();
       if (color.none) {
         if (findings.findByProperty(prop, none) != null) {
           logColorTaken(logger, color.none, `${prop === "severity" ? "bySeverity" : "byLevel"}.none`);
@@ -52819,7 +53215,7 @@ ${summary2}`;
       return void 0;
     }
     function identifyColorBySeverity(findings, color) {
-      const logger = new Logger(identifyColorBySeverity.name);
+      const logger = new Logger();
       if (color.critical) {
         if (findings.findByProperty(
           "severity",
@@ -52879,7 +53275,7 @@ ${summary2}`;
       return identifyColorCommon(findings, "severity", 1, 0, color);
     }
     function identifyColorByLevel(findings, color) {
-      const logger = new Logger(identifyColorByLevel.name);
+      const logger = new Logger();
       if (color.error) {
         if (findings.findByProperty(
           "level",
@@ -52925,7 +53321,7 @@ ${summary2}`;
       return identifyColorCommon(findings, "level", 1, 0, color);
     }
     function identifyColor(findings, colorOpts) {
-      const logger = new Logger(identifyColor.name);
+      const logger = new Logger();
       if (!colorOpts) {
         logger.debug("Message has no color as color options are not defined.");
         return void 0;
@@ -53052,7 +53448,6 @@ ${summary2}`;
       }
     };
     var SarifToSlackClient2 = class _SarifToSlackClient {
-      _logger = new Logger("SarifToSlackClient");
       _message;
       _sarifModel;
       _sendIf = 20;
@@ -53076,8 +53471,10 @@ ${summary2}`;
        * @public
        */
       static async create(webhookUrl, opts) {
+        globalState.loggerOpts = opts.loggerOptions;
+        const logger = new Logger();
+        logger.trace(opts);
         const instance = new _SarifToSlackClient();
-        instance._logger.trace(opts);
         instance._sendIf = opts.sendIf ?? instance._sendIf;
         instance._sarifModel = await _SarifToSlackClient.buildModel(opts.sarif);
         instance._message = await _SarifToSlackClient.initialize(webhookUrl, opts, instance._sarifModel);
@@ -53155,14 +53552,15 @@ ${summary2}`;
         if (this._sarifModel == null) {
           throw new Error("Could not parse SARIF file(s).");
         }
+        const logger = new Logger();
         if (this.shouldSendMessage) {
           if (this._message == null) {
             throw new Error("Slack message was not prepared.");
           }
           const text = await this._message.send();
-          this._logger.info("Message sent. Status:", text);
+          logger.info("Message sent. Status:", text);
         } else {
-          this._logger.info(sendIfLogMessage(this._sendIf));
+          logger.info(sendIfLogMessage(this._sendIf));
         }
       }
       get shouldSendMessage() {
@@ -53864,5 +54262,5 @@ mime-types/index.js:
    *)
 
 axios/dist/node/axios.cjs:
-  (*! Axios v1.14.0 Copyright (c) 2026 Matt Zabriskie and contributors *)
+  (*! Axios v1.15.2 Copyright (c) 2026 Matt Zabriskie and contributors *)
 */
