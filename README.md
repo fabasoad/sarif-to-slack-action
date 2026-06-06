@@ -23,7 +23,7 @@ This GitHub action sends a notification to Slack based on the provided SARIF fil
 ## Inputs
 
 ```yaml
-- uses: fabasoad/sarif-to-slack-action@v2
+- uses: fabasoad/sarif-to-slack-action@v3
   with:
     # (Required) Target Slack webhook URL.
     slack-webhook: "${{ secrets.SLACK_WEBHOOK }}"
