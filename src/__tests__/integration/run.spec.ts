@@ -1,6 +1,8 @@
-jest.mock('@actions/core', () => ({
-  getInput: jest.fn(),
-  getBooleanInput: jest.fn(),
+import { vi } from 'vitest';
+
+vi.mock('@actions/core', () => ({
+  getInput: vi.fn(),
+  getBooleanInput: vi.fn(),
 }));
 
 import { getInput, getBooleanInput, InputOptions } from '@actions/core'
@@ -8,7 +10,7 @@ import run from '../../run'
 
 describe('(integration): run', (): void => {
   beforeEach((): void => {
-    (getInput as jest.Mock<string, [string, InputOptions]>).mockImplementation(
+    vi.mocked(getInput).mockImplementation(
       (name: string, opts?: InputOptions): string => {
         switch (name) {
           case 'slack-webhook':
@@ -142,11 +144,11 @@ describe('(integration): run', (): void => {
             expect(opts?.trimWhitespace).toBe(true)
             return process.env.SARIF_TO_SLACK_SEND_IF as string
           default:
-            fail(`Unhandled parameter "${name}"`)
+            throw new Error(`Unhandled parameter "${name}"`)
         }
       }
     );
-    (getBooleanInput as jest.Mock<boolean, [string, InputOptions]>).mockImplementation(
+    vi.mocked(getBooleanInput).mockImplementation(
       (name: string, opts?: InputOptions): boolean => {
         switch (name) {
           case 'sarif-path-recursive':
@@ -175,14 +177,14 @@ describe('(integration): run', (): void => {
             expect(opts?.trimWhitespace).toBe(true)
             return Boolean(process.env.SARIF_TO_SLACK_SARIF_INCLUDE_RUN)
           default:
-            fail(`Unhandled parameter "${name}"`)
+            throw new Error(`Unhandled parameter "${name}"`)
         }
       }
     )
   })
 
   afterEach((): void => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('should send Sarif to Slack', async (): Promise<void> => {

@@ -6,4 +6,5 @@
 .idea
 coverage
 node_modules
+vitest-report.json
 .pnp.*

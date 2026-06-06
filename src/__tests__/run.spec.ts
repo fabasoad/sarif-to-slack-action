@@ -1,8 +1,13 @@
-const mockGetInput: jest.Mock<string, [string, InputOptions]> = jest.fn();
-const mockGetBooleanInput: jest.Mock<boolean, [string, InputOptions]> = jest.fn();
+import { vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 
-jest.mock('@actions/core', () => ({
-  ...jest.requireActual('@actions/core'),
+const { mockGetInput, mockGetBooleanInput } = vi.hoisted(() => ({
+  mockGetInput: vi.fn<(name: string, opts?: InputOptions) => string>(),
+  mockGetBooleanInput: vi.fn<(name: string, opts?: InputOptions) => boolean>(),
+}));
+
+vi.mock('@actions/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@actions/core')>()),
   getInput: mockGetInput,
   getBooleanInput: mockGetBooleanInput,
 }));
@@ -68,24 +73,24 @@ describe('(unit): run', (): void => {
             expect(opts?.trimWhitespace).toBe(true);
             return true;
           default:
-            fail(`Unhandled parameter "${name}"`);
+            throw new Error(`Unhandled parameter "${name}"`);
         }
       }
     )
   })
 
   afterEach((): void => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   })
 
   test('should send Sarif to Slack', async (): Promise<void> => {
-    const mockSend: jest.Mock<Promise<void>, []> = jest.fn();
-    const mockFrom: jest.SpyInstance<Color | undefined, [string | undefined]> = jest
+    const mockSend = vi.fn<() => Promise<void>>();
+    const mockFrom: MockInstance<(color: string | undefined) => Color | undefined> = vi
       .spyOn(Color, 'from')
       .mockImplementation((color: string | undefined): Color | undefined => ({
         color
       } as Color));
-    const mockCreate: jest.SpyInstance<Promise<SarifToSlackClient>, [string, SarifToSlackClientOptions]> = jest
+    const mockCreate: MockInstance<(webhookUrl: string, opts: SarifToSlackClientOptions) => Promise<SarifToSlackClient>> = vi
       .spyOn(SarifToSlackClient, 'create')
       .mockImplementation((webhookUrl: string, opts: SarifToSlackClientOptions): Promise<SarifToSlackClient> => {
         expect(webhookUrl).toBe('slack-webhook-test');

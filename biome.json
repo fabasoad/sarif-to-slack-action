@@ -78,7 +78,19 @@
     "includes": ["src/**"]
   },
   "javascript": {
-    "globals": ["Atomics", "SharedArrayBuffer", "jest", "afterEach", "beforeAll", "beforeEach", "expect", "test", "describe", "fail"]
+    "globals": [
+      "Atomics",
+      "SharedArrayBuffer",
+      "describe",
+      "test",
+      "it",
+      "expect",
+      "beforeAll",
+      "beforeEach",
+      "afterAll",
+      "afterEach",
+      "vi"
+    ]
   },
   "overrides": [{ "includes": ["**/*.spec.ts", "**/*.spec.tsx"] }]
 }
