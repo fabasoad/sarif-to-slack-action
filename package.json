@@ -4,12 +4,12 @@
   "description": "This GitHub action sends notification to Slack based on SARIF file.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --outfile=dist/index.js",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node24 --outfile=dist/index.js",
     "lint": "biome lint --write src",
     "test": "vitest run --reporter=json --outputFile=vitest-report.json --coverage --testNamePattern=unit",
     "test:integration": "vitest run --testNamePattern=integration",
     "clean": "rm -rf coverage && rm -rf temp",
-    "clean:unsafe": "rm -f package-lock.json && rm -rf node_modules && rm -rf dist"
+    "clean:unsafe": "rm -f pnpm-lock.yaml && rm -rf node_modules && rm -rf dist"
   },
   "repository": {
     "type": "git",
@@ -26,6 +26,7 @@
     "url": "https://github.com/fabasoad/sarif-to-slack-action/issues"
   },
   "homepage": "https://github.com/fabasoad/sarif-to-slack-action#readme",
+  "packageManager": "pnpm@12.16.1",
   "dependencies": {
     "@actions/core": "~3.0.1",
     "@fabasoad/sarif-to-slack": "~1.4.2"
