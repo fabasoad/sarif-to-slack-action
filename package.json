@@ -26,17 +26,17 @@
     "url": "https://github.com/fabasoad/sarif-to-slack-action/issues"
   },
   "homepage": "https://github.com/fabasoad/sarif-to-slack-action#readme",
-  "packageManager": "pnpm@12.16.1",
+  "packageManager": "pnpm@12.23.0",
   "dependencies": {
     "@actions/core": "~3.0.1",
     "@fabasoad/sarif-to-slack": "~1.4.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "~2.6.7",
-    "@types/node": "~26.6.6",
-    "@vitest/coverage-v8": "~5.1.0",
+    "@biomejs/biome": "~2.6.9",
+    "@types/node": "~26.6.11",
+    "@vitest/coverage-v8": "~5.1.2",
     "esbuild": "~0.28.2",
     "typescript": "~7.0.2",
-    "vitest": "~5.1.0"
+    "vitest": "~5.1.2"
   }
 }
